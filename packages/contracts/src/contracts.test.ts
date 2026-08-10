@@ -61,6 +61,11 @@ describe("shared contracts", () => {
     });
   });
 
+  it("does not allow publication transitions to be mutated at runtime", () => {
+    expect(Object.isFrozen(PublicationTransitionMap)).toBe(true);
+    expect(Object.values(PublicationTransitionMap).every(Object.isFrozen)).toBe(true);
+  });
+
   it("projects bounded content and publication statuses for dashboards", () => {
     expect(projectWorkflowStatus("approved")).toBe("APPROVED");
     expect(projectWorkflowStatus("packaged", "READY_TO_PREFILL")).toBe("READY_TO_PREFILL");

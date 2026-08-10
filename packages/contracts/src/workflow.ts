@@ -39,16 +39,20 @@ export type PublicationStatus = z.infer<typeof PublicationStatusSchema>;
 export type JobStatus = z.infer<typeof JobStatusSchema>;
 export type ChannelType = z.infer<typeof ChannelTypeSchema>;
 
-export const PublicationTransitionMap: Record<PublicationStatus, readonly PublicationStatus[]> = {
-  READY_TO_PREFILL: ["PREFILLING"],
-  PREFILLING: ["NEEDS_LOGIN", "PREFILL_FAILED", "AWAITING_HUMAN_PUBLISH"],
-  NEEDS_LOGIN: ["READY_TO_PREFILL"],
-  PREFILL_FAILED: ["READY_TO_PREFILL"],
-  AWAITING_HUMAN_PUBLISH: ["PUBLISHED"],
-  PUBLISHED: ["MEASURING"],
-  MEASURING: ["RETROSPECTED"],
-  RETROSPECTED: [],
-};
+const freezeTransitions = (transitions: PublicationStatus[]): readonly PublicationStatus[] =>
+  Object.freeze(transitions);
+
+export const PublicationTransitionMap: Readonly<Record<PublicationStatus, readonly PublicationStatus[]>> =
+  Object.freeze({
+    READY_TO_PREFILL: freezeTransitions(["PREFILLING"]),
+    PREFILLING: freezeTransitions(["NEEDS_LOGIN", "PREFILL_FAILED", "AWAITING_HUMAN_PUBLISH"]),
+    NEEDS_LOGIN: freezeTransitions(["READY_TO_PREFILL"]),
+    PREFILL_FAILED: freezeTransitions(["READY_TO_PREFILL"]),
+    AWAITING_HUMAN_PUBLISH: freezeTransitions(["PUBLISHED"]),
+    PUBLISHED: freezeTransitions(["MEASURING"]),
+    MEASURING: freezeTransitions(["RETROSPECTED"]),
+    RETROSPECTED: freezeTransitions([]),
+  });
 
 const ContentWorkflowStatusProjection: Record<ContentStatus, WorkflowStatus> = {
   draft: "COPY_READY",
