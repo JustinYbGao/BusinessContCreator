@@ -1,0 +1,27 @@
+{
+  "name": "social-media-agent",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20.9 <21"
+  },
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "test": "turbo test",
+    "typecheck": "turbo typecheck",
+    "lint": "turbo lint",
+    "supabase:start": "supabase start",
+    "supabase:reset": "supabase db reset",
+    "supabase:stop": "supabase stop"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "supabase": "^2.0.0",
+    "tsx": "^4.0.0",
+    "turbo": "^2.0.0",
+    "typescript": "6.0.3",
+    "vitest": "^4.0.0"
+  },
+  "dependencies": { "zod": "^4.0.0" }
+}

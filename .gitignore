@@ -1,0 +1,12 @@
+node_modules/
+.turbo/
+.next/
+dist/
+coverage/
+.env
+.env.local
+.env.*.local
+playwright-report/
+test-results/
+apps/local-publisher/.chrome-profile/
+apps/local-publisher/.downloads/
