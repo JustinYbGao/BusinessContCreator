@@ -1,0 +1,19 @@
+{
+  "name": "@social-agent/llm",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./port": "./src/port.ts",
+    "./parse-structured": "./src/parse-structured.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.0.0"
+  }
+}

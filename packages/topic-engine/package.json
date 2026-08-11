@@ -1,0 +1,21 @@
+{
+  "name": "@social-agent/topic-engine",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./score": "./src/score.ts",
+    "./select-week": "./src/select-week.ts",
+    "./generate": "./src/generate.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@social-agent/llm": "workspace:*",
+    "zod": "^4.0.0"
+  }
+}

@@ -5,6 +5,7 @@ import { parseSyncRequest } from "./products/[productId]/sync/route.js";
 import { parseFactAction } from "./products/[productId]/facts/route.js";
 import { parseAssetAction } from "./products/[productId]/assets/route.js";
 import { parseCampaignRequest } from "./campaigns/route.js";
+import { parseGenerateTopicsRequest, scopeTopicGenerationIdempotencyKey } from "./topics/generate/route.js";
 
 const productIds = {
   productId: "00000000-0000-4000-8000-000000000001",
@@ -87,5 +88,20 @@ describe("Task 4 CRUD request boundaries", () => {
       startsOn: "2026-09-01",
       endsOn: "2026-09-28",
     })).toThrow("INVALID_CAMPAIGN_INPUT");
+  });
+
+  it("accepts only a scoped campaign id for topic generation", () => {
+    expect(parseGenerateTopicsRequest({ campaignId: productIds.productId })).toEqual({ campaignId: productIds.productId });
+    expect(() => parseGenerateTopicsRequest({ campaignId: productIds.productId, sourceRoot: "/Users/secret" }))
+      .toThrow("INVALID_TOPIC_GENERATION_INPUT");
+    expect(() => parseGenerateTopicsRequest({ campaignId: "not-a-uuid" }))
+      .toThrow("INVALID_TOPIC_GENERATION_INPUT");
+  });
+
+  it("scopes topic generation idempotency keys to the campaign", () => {
+    expect(scopeTopicGenerationIdempotencyKey(productIds.productId, "request-1"))
+      .toBe(`generate_topics:${productIds.productId}:request-1`);
+    expect(scopeTopicGenerationIdempotencyKey(productIds.productId, "request-1"))
+      .not.toBe(scopeTopicGenerationIdempotencyKey(productIds.channelId, "request-1"));
   });
 });

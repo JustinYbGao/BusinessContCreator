@@ -92,11 +92,26 @@ importers:
         specifier: ^0.35.3
         version: 0.35.3(@types/node@20.19.43)
 
+  packages/llm:
+    dependencies:
+      zod:
+        specifier: ^4.0.0
+        version: 4.4.3
+
   packages/product-core:
     dependencies:
       '@social-agent/contracts':
         specifier: workspace:*
         version: link:../contracts
+
+  packages/topic-engine:
+    dependencies:
+      '@social-agent/llm':
+        specifier: workspace:*
+        version: link:../llm
+      zod:
+        specifier: ^4.0.0
+        version: 4.4.3
 
 packages:
 
