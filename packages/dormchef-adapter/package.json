@@ -1,16 +1,17 @@
 {
-  "name": "@social-agent/contracts",
+  "name": "@social-agent/dormchef-adapter",
   "private": true,
   "type": "module",
-  "exports": {
-    ".": "./src/index.ts",
-    "./product": "./src/product.ts"
-  },
+  "exports": "./src/index.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit"
   },
-  "dependencies": { "zod": "^4.0.0" }
+  "dependencies": {
+    "@social-agent/contracts": "workspace:*",
+    "jsqr": "^1.4.0",
+    "sharp": "^0.35.3"
+  }
 }
