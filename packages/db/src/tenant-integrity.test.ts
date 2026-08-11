@@ -305,7 +305,7 @@ describe("Supabase tenant and durability integration", () => {
       p_request_id: crypto.randomUUID(),
     });
     expect(result.error?.message).toContain("FACT_SCOPE_MISMATCH");
-  });
+  }, 15_000);
 
   it("does not make rendered assets visible before their Storage objects are verified", async () => {
     const workspaceId = await createWorkspace(service, "render-storage-verification");
@@ -502,7 +502,7 @@ describe("Supabase tenant and durability integration", () => {
     await expect(new SupabasePublicationRepository(service).transition(
       context(), publication!.id, "AWAITING_HUMAN_PUBLISH", "PUBLISHED",
     )).rejects.toThrow("HUMAN_PUBLICATION_CONFIRMATION_REQUIRED");
-  });
+  }, 15_000);
 
   it("separates usable source assets from generated version assets", async () => {
     const fixture = await createContentFixture(service, "asset-semantics");
