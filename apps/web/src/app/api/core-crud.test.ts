@@ -6,6 +6,8 @@ import { parseFactAction } from "./products/[productId]/facts/route.js";
 import { parseAssetAction } from "./products/[productId]/assets/route.js";
 import { parseCampaignRequest } from "./campaigns/route.js";
 import { parseGenerateTopicsRequest, scopeTopicGenerationIdempotencyKey } from "./topics/generate/route.js";
+import { parseCreateContentRequest } from "./contents/route.js";
+import { parseGenerateContentRequest, scopeContentGenerationIdempotencyKey } from "./contents/[contentId]/generate/route.js";
 
 const productIds = {
   productId: "00000000-0000-4000-8000-000000000001",
@@ -103,5 +105,19 @@ describe("Task 4 CRUD request boundaries", () => {
       .toBe(`generate_topics:${productIds.productId}:request-1`);
     expect(scopeTopicGenerationIdempotencyKey(productIds.productId, "request-1"))
       .not.toBe(scopeTopicGenerationIdempotencyKey(productIds.channelId, "request-1"));
+  });
+
+  it("validates selected-content and generation idempotency boundaries", () => {
+    expect(parseCreateContentRequest({
+      campaignId: productIds.productId,
+      topicId: productIds.channelId,
+      desiredCta: "分享你的场景",
+      idempotencyKey: "content-request-1",
+    }).desiredCta).toBe("分享你的场景");
+    expect(() => parseCreateContentRequest({ campaignId: productIds.productId, topicId: productIds.channelId, sourceRoot: "/Users/secret" }))
+      .toThrow("INVALID_CONTENT_INPUT");
+    expect(parseGenerateContentRequest({ idempotencyKey: "generate-request-1" }).idempotencyKey).toBe("generate-request-1");
+    expect(scopeContentGenerationIdempotencyKey(productIds.productId, "request-1"))
+      .toBe(`generate_content:${productIds.productId}:request-1`);
   });
 });

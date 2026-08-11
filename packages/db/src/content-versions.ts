@@ -5,7 +5,7 @@ const mapVersion = (row: Record<string, any>): ContentVersionRecord => ({
   id: row.id, workspaceId: row.workspace_id, productId: row.product_id,
   campaignId: row.campaign_id, contentId: row.content_id, topicId: row.topic_id,
   briefId: row.brief_id, version: row.version, payload: row.payload,
-  status: row.status, contentSha256: row.content_sha256,
+  status: row.status, contentSha256: row.content_sha256, editReason: row.edit_reason ?? null,
 });
 export class SupabaseContentVersionRepository implements ContentVersionRepository {
   constructor(private readonly db: DatabaseClient) {}
@@ -16,7 +16,7 @@ export class SupabaseContentVersionRepository implements ContentVersionRepositor
         product_id: input.productId, campaign_id: input.campaignId, content_id: input.contentId,
         topic_id: input.topicId, brief_id: input.briefId, payload: input.payload,
         prompt_version: input.promptVersion, model_name: input.modelName,
-        content_sha256: input.contentSha256, created_by: input.createdBy,
+        content_sha256: input.contentSha256, edit_reason: input.editReason ?? null, created_by: input.createdBy,
       },
       p_actor_type: ctx.actor.type, p_actor_id: ctx.actor.id, p_request_id: ctx.requestId,
     });

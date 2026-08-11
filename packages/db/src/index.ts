@@ -41,6 +41,7 @@ export interface NewContentVersion {
   promptVersion: string;
   modelName: string;
   contentSha256: string;
+  editReason?: string | null;
   createdBy: string;
 }
 
@@ -56,7 +57,7 @@ export interface ProductRecord {
 export interface ProductSourceRecord { id: string; workspaceId: string; productId: string; kind: "manual" | "dormchef_local"; locator: string }
 export interface CampaignRecord { id: string; workspaceId: string; productId: string; channelId: string; name: string; goal: string; audience: string; startsOn: string; endsOn: string; pillarQuotas: unknown }
 export interface ContentRecord { id: string; workspaceId: string; productId: string; campaignId: string; topicId: string; status: ContentStatus }
-export interface ContentVersionRecord { id: string; workspaceId: string; productId: string; campaignId: string; contentId: string; topicId: string; briefId: string; version: number; payload: ContentDraft; status: Exclude<ContentStatus, "packaged">; contentSha256: string }
+export interface ContentVersionRecord { id: string; workspaceId: string; productId: string; campaignId: string; contentId: string; topicId: string; briefId: string; version: number; payload: ContentDraft; status: Exclude<ContentStatus, "packaged">; contentSha256: string; editReason: string | null }
 export interface AssetRecord { id: string; workspaceId: string; productId: string; contentVersionId: string | null; objectKey: string; sha256: string; verificationStatus: "candidate" | "verified" | "blocked"; publicUseAllowed: boolean }
 export interface ReviewRunRecord { id: string; contentVersionId: string; runNumber: number; isCurrent: boolean; result: "passed" | "blocked" }
 export interface LearningRecord { id: string; workspaceId: string; productId: string; publicationId: string; evidenceWindow: string; payload: unknown }

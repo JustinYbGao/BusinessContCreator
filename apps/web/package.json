@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@social-agent/content-engine": "workspace:*",
     "@social-agent/contracts": "workspace:*",
     "@social-agent/db": "workspace:*",
     "@supabase/ssr": "^0.7.0",

@@ -1,11 +1,12 @@
 {
-  "name": "@social-agent/contracts",
+  "name": "@social-agent/content-engine",
   "private": true,
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./content": "./src/content.ts",
-    "./product": "./src/product.ts"
+    "./prompt": "./src/prompt.ts",
+    "./generate": "./src/generate.ts",
+    "./hash": "./src/hash.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -13,5 +14,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit"
   },
-  "dependencies": { "zod": "^4.0.0" }
+  "dependencies": {
+    "@social-agent/contracts": "workspace:*",
+    "@social-agent/llm": "workspace:*"
+  }
 }
