@@ -1,0 +1,148 @@
+import { randomUUID } from "node:crypto";
+import { NextResponse } from "next/server";
+import { ProductSourceInputSchema, ProductSourceRecordSchema } from "@social-agent/contracts/product";
+import { HttpError } from "../../../../../lib/auth";
+import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../../../../lib/supabase/server";
+
+type RouteContext = { params: Promise<{ productId: string }> };
+
+function normalizeProductSourceLocator(input: unknown): string {
+  if (typeof input !== "string" || !input || input.includes("\0")) throw new Error("SOURCE_LOCATOR_INVALID");
+  const normalized = input.replaceAll("\\", "/").trim();
+  if (!normalized || normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized)) throw new Error("SOURCE_LOCATOR_INVALID");
+  const segments = normalized.split("/");
+  if (segments.some((segment) => !segment || segment === "." || segment === ".." || segment === ".git" || segment.startsWith(".env"))) throw new Error("SOURCE_LOCATOR_INVALID");
+  return segments.join("/");
+}
+
+function isAllowedDormChefLocator(locator: string): boolean {
+  if (locator === "README.md" || locator === "docs/DormChef-Demo到Agent-Beta-业务说明.md" || locator === "apps/miniprogram/app.json") return true;
+  if (locator.startsWith("apps/miniprogram/pages/") && locator.endsWith(".wxml")) return true;
+  return locator.startsWith("apps/miniprogram/assets/mascot/") && /\.(?:png|jpe?g|webp)$/i.test(locator);
+}
+
+export function parseProductSourceRequest(input: unknown) {
+  const parsed = ProductSourceInputSchema.safeParse(input);
+  if (!parsed.success) throw new Error("INVALID_SOURCE_INPUT");
+  const locator = normalizeProductSourceLocator(parsed.data.locator);
+  if (parsed.data.kind === "dormchef_local" && !isAllowedDormChefLocator(locator)) throw new Error("SOURCE_LOCATOR_INVALID");
+  return { ...parsed.data, locator };
+}
+
+function codeOf(error: unknown): string {
+  if (error instanceof HttpError) return error.code;
+  if (error instanceof Error && /^[A-Z][A-Z0-9_]+$/.test(error.message)) return error.message;
+  if (typeof error === "object" && error && "code" in error && error.code === "23505") return "SOURCE_ALREADY_EXISTS";
+  return "INTERNAL_ERROR";
+}
+
+function statusOf(code: string): number {
+  if (code === "AUTH_REQUIRED") return 401;
+  if (code === "ADMIN_REQUIRED") return 403;
+  if (code === "INVALID_SOURCE_INPUT" || code === "SOURCE_LOCATOR_INVALID" || code === "IDEMPOTENCY_KEY_INVALID") return 400;
+  if (code === "PRODUCT_NOT_FOUND") return 404;
+  if (code === "SOURCE_ALREADY_EXISTS") return 409;
+  return 500;
+}
+
+function errorResponse(error: unknown) {
+  const code = codeOf(error);
+  return NextResponse.json({ ok: false, error: code }, { status: statusOf(code), headers: { "Cache-Control": "no-store" } });
+}
+
+async function requireProduct(supabase: ReturnType<typeof createSupabaseServiceRoleClient>, workspaceId: string, productId: string) {
+  const { data, error } = await supabase.from("products").select("id").eq("workspace_id", workspaceId).eq("id", productId).is("deleted_at", null).maybeSingle();
+  if (error || !data) throw new Error("PRODUCT_NOT_FOUND");
+}
+
+function idempotencyKeyFrom(request: Request): string | null {
+  const value = request.headers.get("idempotency-key")?.trim() ?? "";
+  if (value.length > 200) throw new Error("IDEMPOTENCY_KEY_INVALID");
+  return value || null;
+}
+
+async function findIdempotentSource(
+  supabase: ReturnType<typeof createSupabaseServiceRoleClient>,
+  workspaceId: string,
+  productId: string,
+  idempotencyKey: string,
+) {
+  const { data: audit, error: auditError } = await supabase
+    .from("audit_events")
+    .select("entity_id")
+    .eq("workspace_id", workspaceId)
+    .eq("product_id", productId)
+    .eq("request_id", idempotencyKey)
+    .eq("action", "product_source.created")
+    .eq("entity_type", "product_source")
+    .limit(1)
+    .maybeSingle();
+  if (auditError) throw new Error("SOURCE_IDEMPOTENCY_LOOKUP_FAILED");
+  if (!audit?.entity_id) return null;
+  const { data: source, error } = await supabase.from("product_sources")
+    .select("id,workspace_id,product_id,kind,locator,last_synced_at,created_at")
+    .eq("workspace_id", workspaceId).eq("product_id", productId).eq("id", audit.entity_id).maybeSingle();
+  if (error || !source) throw new Error("SOURCE_IDEMPOTENCY_LOOKUP_FAILED");
+  return { source: ProductSourceRecordSchema.parse(source) };
+}
+
+export async function GET(_request: Request, context: RouteContext) {
+  try {
+    const identity = await requireServerInternalAdmin();
+    const { productId } = await context.params;
+    const supabase = createSupabaseServiceRoleClient();
+    await requireProduct(supabase, identity.workspaceId, productId);
+    const { data: sources, error } = await supabase.from("product_sources").select("id,workspace_id,product_id,kind,locator,last_synced_at,created_at").eq("workspace_id", identity.workspaceId).eq("product_id", productId).order("created_at");
+    if (error) throw new Error("SOURCES_UNAVAILABLE");
+    return NextResponse.json({ sources: (sources ?? []).map((row) => ProductSourceRecordSchema.parse(row)) }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function POST(request: Request, context: RouteContext) {
+  try {
+    const identity = await requireServerInternalAdmin();
+    const { productId } = await context.params;
+    let body: unknown;
+    try {
+      body = request.headers.get("content-type")?.includes("application/json") ? await request.json() : Object.fromEntries((await request.formData()).entries());
+    } catch {
+      throw new Error("INVALID_SOURCE_INPUT");
+    }
+    const input = parseProductSourceRequest(body);
+    const supabase = createSupabaseServiceRoleClient();
+    await requireProduct(supabase, identity.workspaceId, productId);
+    const idempotencyKey = idempotencyKeyFrom(request);
+    const requestId = idempotencyKey || request.headers.get("x-request-id")?.trim() || randomUUID();
+    if (idempotencyKey) {
+      const existing = await findIdempotentSource(supabase, identity.workspaceId, productId, idempotencyKey);
+      if (existing) return NextResponse.json(existing, { headers: { "Cache-Control": "no-store" } });
+    }
+    const { data: source, error: sourceError } = await supabase.from("product_sources").insert({ workspace_id: identity.workspaceId, product_id: productId, kind: input.kind, locator: input.locator }).select("id,workspace_id,product_id,kind,locator,last_synced_at,created_at").single();
+    if (sourceError || !source) throw new Error("SOURCE_CREATE_FAILED");
+    const sourceRecord = ProductSourceRecordSchema.parse(source);
+    const { error: auditError } = await supabase.rpc("append_audit_event", {
+      p_workspace_id: identity.workspaceId,
+      p_event: {
+        product_id: productId,
+        actor_type: "user",
+        actor_id: identity.userId,
+        action: "product_source.created",
+        entity_type: "product_source",
+        entity_id: sourceRecord.id,
+        request_id: requestId,
+        payload: { kind: sourceRecord.kind, locator: sourceRecord.locator },
+      },
+    });
+    if (auditError) {
+      const { error: rollbackError } = await supabase.from("product_sources").delete()
+        .eq("workspace_id", identity.workspaceId).eq("product_id", productId).eq("id", source.id);
+      if (rollbackError) throw new Error("SOURCE_ROLLBACK_FAILED");
+      throw new Error("AUDIT_WRITE_FAILED");
+    }
+    return NextResponse.json({ source: sourceRecord }, { status: 201, headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
