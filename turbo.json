@@ -1,5 +1,10 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalEnv": [
+    "SOCIAL_AGENT_SUPABASE_URL",
+    "SOCIAL_AGENT_SUPABASE_SERVICE_ROLE_KEY",
+    "SOCIAL_AGENT_SUPABASE_ANON_KEY"
+  ],
   "tasks": {
     "build": { "dependsOn": ["^build"], "outputs": ["dist/**", ".next/**"] },
     "test": { "dependsOn": ["^build"], "outputs": [] },

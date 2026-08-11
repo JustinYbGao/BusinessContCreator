@@ -1,0 +1,16 @@
+{
+  "name": "@social-agent/db",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "build": "tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext --types node --skipLibCheck src/*.ts",
+    "test": "vitest run --maxWorkers=1",
+    "typecheck": "tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext --types node --skipLibCheck src/*.ts",
+    "lint": "pnpm typecheck"
+  },
+  "dependencies": {
+    "@social-agent/contracts": "workspace:*",
+    "@supabase/supabase-js": "2.57.4"
+  }
+}
