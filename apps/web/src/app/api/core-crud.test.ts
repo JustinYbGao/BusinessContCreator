@@ -1,13 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { parseProductRequest } from "./products/route.js";
-import { parseProductSourceRequest } from "./products/[productId]/sources/route.js";
-import { parseSyncRequest } from "./products/[productId]/sync/route.js";
-import { parseFactAction } from "./products/[productId]/facts/route.js";
-import { parseAssetAction } from "./products/[productId]/assets/route.js";
-import { parseCampaignRequest } from "./campaigns/route.js";
-import { parseGenerateTopicsRequest, scopeTopicGenerationIdempotencyKey } from "./topics/generate/route.js";
-import { parseCreateContentRequest } from "./contents/route.js";
-import { parseGenerateContentRequest, scopeContentGenerationIdempotencyKey } from "./contents/[contentId]/generate/route.js";
+import {
+  parseApproveContentRequest,
+  parseAssetAction,
+  parseCampaignRequest,
+  parseCreateContentRequest,
+  parseFactAction,
+  parseGenerateContentRequest,
+  parseGenerateTopicsRequest,
+  parseProductRequest,
+  parseProductSourceRequest,
+  parseReviewContentRequest,
+  parseSyncRequest,
+  scopeContentGenerationIdempotencyKey,
+  scopeTopicGenerationIdempotencyKey,
+} from "../../lib/api-inputs";
 
 const productIds = {
   productId: "00000000-0000-4000-8000-000000000001",
@@ -119,5 +125,16 @@ describe("Task 4 CRUD request boundaries", () => {
     expect(parseGenerateContentRequest({ idempotencyKey: "generate-request-1" }).idempotencyKey).toBe("generate-request-1");
     expect(scopeContentGenerationIdempotencyKey(productIds.productId, "request-1"))
       .toBe(`generate_content:${productIds.productId}:request-1`);
+  });
+
+  it("requires a strict review and approval request boundary", () => {
+    expect(parseReviewContentRequest({ contentVersionId: productIds.productId }).contentVersionId)
+      .toBe(productIds.productId);
+    expect(parseReviewContentRequest({}).contentVersionId).toBeUndefined();
+    expect(() => parseReviewContentRequest({ force: true })).toThrow("INVALID_REVIEW_INPUT");
+    expect(parseApproveContentRequest({ contentVersionId: productIds.productId }).contentVersionId)
+      .toBe(productIds.productId);
+    expect(() => parseApproveContentRequest({ contentVersionId: productIds.productId, force: true }))
+      .toThrow("INVALID_APPROVE_INPUT");
   });
 });

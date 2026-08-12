@@ -1,30 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { WorkflowJobSummarySchema } from "@social-agent/contracts/product";
-import { z } from "zod";
 import { HttpError } from "../../../../lib/auth";
 import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../../../lib/supabase/server";
-
-const GenerateTopicsRequestSchema = z.object({
-  campaignId: z.string().uuid(),
-  idempotencyKey: z.string().trim().min(1).max(200).optional(),
-}).strict();
-
-export function parseGenerateTopicsRequest(input: unknown) {
-  const parsed = GenerateTopicsRequestSchema.safeParse(input);
-  if (!parsed.success) throw new Error("INVALID_TOPIC_GENERATION_INPUT");
-  return parsed.data;
-}
+import { parseGenerateTopicsRequest, scopeTopicGenerationIdempotencyKey } from "../../../../lib/api-inputs";
 
 function idempotencyKeyFrom(request: Request, bodyKey?: string): string {
   const headerKey = request.headers.get("idempotency-key")?.trim();
   const key = headerKey || bodyKey?.trim();
   if (!key || key.length > 200) throw new Error("IDEMPOTENCY_KEY_REQUIRED");
   return key;
-}
-
-export function scopeTopicGenerationIdempotencyKey(campaignId: string, idempotencyKey: string): string {
-  return `generate_topics:${campaignId}:${idempotencyKey}`;
 }
 
 function codeOf(error: unknown): string {

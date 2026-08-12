@@ -1,33 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { ProductSourceInputSchema, ProductSourceRecordSchema } from "@social-agent/contracts/product";
+import { ProductSourceRecordSchema } from "@social-agent/contracts/product";
 import { HttpError } from "../../../../../lib/auth";
 import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../../../../lib/supabase/server";
+import { parseProductSourceRequest } from "../../../../../lib/api-inputs";
 
 type RouteContext = { params: Promise<{ productId: string }> };
-
-function normalizeProductSourceLocator(input: unknown): string {
-  if (typeof input !== "string" || !input || input.includes("\0")) throw new Error("SOURCE_LOCATOR_INVALID");
-  const normalized = input.replaceAll("\\", "/").trim();
-  if (!normalized || normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized)) throw new Error("SOURCE_LOCATOR_INVALID");
-  const segments = normalized.split("/");
-  if (segments.some((segment) => !segment || segment === "." || segment === ".." || segment === ".git" || segment.startsWith(".env"))) throw new Error("SOURCE_LOCATOR_INVALID");
-  return segments.join("/");
-}
-
-function isAllowedDormChefLocator(locator: string): boolean {
-  if (locator === "README.md" || locator === "docs/DormChef-Demo到Agent-Beta-业务说明.md" || locator === "apps/miniprogram/app.json") return true;
-  if (locator.startsWith("apps/miniprogram/pages/") && locator.endsWith(".wxml")) return true;
-  return locator.startsWith("apps/miniprogram/assets/mascot/") && /\.(?:png|jpe?g|webp)$/i.test(locator);
-}
-
-export function parseProductSourceRequest(input: unknown) {
-  const parsed = ProductSourceInputSchema.safeParse(input);
-  if (!parsed.success) throw new Error("INVALID_SOURCE_INPUT");
-  const locator = normalizeProductSourceLocator(parsed.data.locator);
-  if (parsed.data.kind === "dormchef_local" && !isAllowedDormChefLocator(locator)) throw new Error("SOURCE_LOCATOR_INVALID");
-  return { ...parsed.data, locator };
-}
 
 function codeOf(error: unknown): string {
   if (error instanceof HttpError) return error.code;

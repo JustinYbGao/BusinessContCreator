@@ -3,13 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { HttpError } from "../../../lib/auth";
 import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../../lib/supabase/server";
-
-const CreateContentRequestSchema = z.object({
-  campaignId: z.string().uuid(),
-  topicId: z.string().uuid(),
-  desiredCta: z.string().trim().min(1).max(500).optional(),
-  idempotencyKey: z.string().trim().min(1).max(200).optional(),
-}).strict();
+import { parseCreateContentRequest } from "../../../lib/api-inputs";
 
 const TopicRowSchema = z.object({
   id: z.string().uuid(),
@@ -21,16 +15,6 @@ const TopicRowSchema = z.object({
   fact_ids: z.array(z.string().uuid()),
   selected: z.boolean(),
 }).strict();
-
-export function parseCreateContentRequest(input: unknown) {
-  const parsed = CreateContentRequestSchema.safeParse(input);
-  if (!parsed.success) throw new Error("INVALID_CONTENT_INPUT");
-  return parsed.data;
-}
-
-export function scopeContentIdempotencyKey(contentId: string, idempotencyKey: string): string {
-  return `generate_content:${contentId}:${idempotencyKey}`;
-}
 
 function errorCode(error: unknown): string {
   if (error instanceof HttpError) return error.code;

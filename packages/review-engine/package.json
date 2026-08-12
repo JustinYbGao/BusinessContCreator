@@ -1,0 +1,20 @@
+{
+  "name": "@social-agent/review-engine",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./review": "./src/review.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@social-agent/contracts": "workspace:*",
+    "@social-agent/llm": "workspace:*",
+    "zod": "^4.0.0"
+  }
+}

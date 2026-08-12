@@ -1,18 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { AssetRecordSchema, ProductAssetDecisionSchema } from "@social-agent/contracts/product";
-import { z } from "zod";
+import { AssetRecordSchema } from "@social-agent/contracts/product";
 import { HttpError } from "../../../../../lib/auth";
 import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../../../../lib/supabase/server";
-
-const AssetActionSchema = z.object({ assetId: z.string().uuid(), ...ProductAssetDecisionSchema.shape }).strict();
+import { parseAssetAction } from "../../../../../lib/api-inputs";
 type RouteContext = { params: Promise<{ productId: string }> };
-
-export function parseAssetAction(input: unknown) {
-  const parsed = AssetActionSchema.safeParse(input);
-  if (!parsed.success) throw new Error("INVALID_ASSET_ACTION");
-  return parsed.data;
-}
 
 function codeOf(error: unknown): string {
   if (error instanceof HttpError) return error.code;

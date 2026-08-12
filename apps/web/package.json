@@ -2,8 +2,8 @@
   "name": "@social-agent/web",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "next dev --webpack",
+    "build": "next build --webpack",
     "start": "next start",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json"
@@ -12,6 +12,8 @@
     "@social-agent/content-engine": "workspace:*",
     "@social-agent/contracts": "workspace:*",
     "@social-agent/db": "workspace:*",
+    "@social-agent/llm": "workspace:*",
+    "@social-agent/review-engine": "workspace:*",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "2.57.4",
     "next": "^16.0.0",

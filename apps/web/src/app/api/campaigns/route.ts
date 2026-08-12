@@ -1,29 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { CampaignCreateInputSchema, CampaignRecordSchema } from "@social-agent/contracts/product";
+import { CampaignRecordSchema } from "@social-agent/contracts/product";
 import { HttpError } from "../../../lib/auth";
 import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../../lib/supabase/server";
-
-function validateCampaignInput(input: unknown) {
-  const parsed = CampaignCreateInputSchema.safeParse(input);
-  if (!parsed.success) throw new Error("INVALID_CAMPAIGN_INPUT");
-  const parseDate = (value: string) => {
-    const date = new Date(`${value}T00:00:00.000Z`);
-    return Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value ? null : date.getTime();
-  };
-  const startsAt = parseDate(parsed.data.startsOn);
-  const endsAt = parseDate(parsed.data.endsOn);
-  const { pain_solution, product_proof, region_timing, founder_story } = parsed.data.pillarQuotas;
-  if (startsAt === null || endsAt === null || (endsAt - startsAt) / (24 * 60 * 60 * 1_000) !== 27
-    || pain_solution !== 5 || product_proof !== 4 || region_timing !== 2 || founder_story !== 1) {
-    throw new Error("INVALID_CAMPAIGN_INPUT");
-  }
-  return parsed.data;
-}
-
-export function parseCampaignRequest(input: unknown) {
-  return validateCampaignInput(input);
-}
+import { parseCampaignRequest } from "../../../lib/api-inputs";
 
 function codeOf(error: unknown): string {
   if (error instanceof HttpError) return error.code;

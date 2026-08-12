@@ -1,18 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { WorkflowJobSummarySchema } from "@social-agent/contracts/product";
-import { z } from "zod";
 import { HttpError } from "../../../../../lib/auth";
 import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../../../../lib/supabase/server";
+import { parseSyncRequest } from "../../../../../lib/api-inputs";
 
-const SyncRequestSchema = z.object({ sourceIds: z.array(z.string().uuid()).max(100).default([]) }).strict();
 type RouteContext = { params: Promise<{ productId: string }> };
-
-export function parseSyncRequest(input: unknown) {
-  const parsed = SyncRequestSchema.safeParse(input);
-  if (!parsed.success) throw new Error("INVALID_SYNC_INPUT");
-  return parsed.data;
-}
 
 function codeOf(error: unknown): string {
   if (error instanceof HttpError) return error.code;

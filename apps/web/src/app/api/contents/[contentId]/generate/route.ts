@@ -3,36 +3,9 @@ import { NextResponse } from "next/server";
 import { ContentDraftSchema, type ContentDraft } from "@social-agent/contracts/content";
 import { WorkflowJobSummarySchema } from "@social-agent/contracts/product";
 import { sha256 } from "@social-agent/content-engine/hash";
-import { z } from "zod";
 import { HttpError } from "../../../../../lib/auth";
 import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../../../../lib/supabase/server";
-
-const GenerateContentRequestSchema = z.object({
-  idempotencyKey: z.string().trim().min(1).max(200).optional(),
-}).strict();
-
-const ContentEditRequestSchema = z.object({
-  action: z.literal("edit"),
-  editReason: z.string().trim().min(1).max(1_000),
-  payload: ContentDraftSchema,
-  idempotencyKey: z.string().trim().min(1).max(200).optional(),
-}).strict();
-
-export function parseGenerateContentRequest(input: unknown) {
-  const parsed = GenerateContentRequestSchema.safeParse(input);
-  if (!parsed.success) throw new Error("INVALID_CONTENT_GENERATION_INPUT");
-  return parsed.data;
-}
-
-export function parseContentEditRequest(input: unknown) {
-  const parsed = ContentEditRequestSchema.safeParse(input);
-  if (!parsed.success) throw new Error("INVALID_CONTENT_EDIT_INPUT");
-  return parsed.data;
-}
-
-export function scopeContentGenerationIdempotencyKey(contentId: string, idempotencyKey: string): string {
-  return `generate_content:${contentId}:${idempotencyKey}`;
-}
+import { parseContentEditForm, parseContentEditRequest, parseGenerateContentRequest, scopeContentGenerationIdempotencyKey } from "../../../../../lib/api-inputs";
 
 function errorCode(error: unknown): string {
   if (error instanceof HttpError) return error.code;
@@ -59,46 +32,6 @@ async function requestBody(request: Request): Promise<unknown> {
   if (contentType.includes("application/json")) return request.json();
   const form = await request.formData();
   return Object.fromEntries(form.entries());
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-}
-
-function stringField(input: Record<string, unknown>, name: string, fallback: string): string {
-  const value = input[name];
-  return typeof value === "string" ? value : fallback;
-}
-
-function parseFormHashtags(input: Record<string, unknown>, fallback: string[]): string[] {
-  const value = input.hashtags;
-  if (typeof value !== "string") return fallback;
-  return value.split(/[\s,]+/).map((item) => item.trim()).filter(Boolean);
-}
-
-export function parseContentEditForm(input: unknown, current: ContentDraft) {
-  const record = asRecord(input);
-  const payload = {
-    ...current,
-    titleCandidates: Array.from({ length: 5 }, (_, index) => stringField(record, `titleCandidate${index + 1}`, current.titleCandidates[index] ?? "")),
-    recommendedTitle: stringField(record, "recommendedTitle", current.recommendedTitle),
-    body: stringField(record, "body", current.body),
-    hashtags: parseFormHashtags(record, current.hashtags),
-    interactionPrompt: stringField(record, "interactionPrompt", current.interactionPrompt),
-    pages: current.pages.map((page) => ({
-      ...page,
-      headline: stringField(record, `page${page.page}Headline`, page.headline),
-      body: stringField(record, `page${page.page}Body`, page.body),
-    })),
-  };
-  const parsed = ContentDraftSchema.safeParse(payload);
-  const editReason = record.editReason;
-  const idempotencyKey = record.idempotencyKey;
-  if (!parsed.success || typeof editReason !== "string" || !editReason.trim() || editReason.length > 1_000
-    || (idempotencyKey !== undefined && (typeof idempotencyKey !== "string" || !idempotencyKey.trim() || idempotencyKey.length > 200))) {
-    throw new Error("INVALID_CONTENT_EDIT_INPUT");
-  }
-  return { action: "edit" as const, editReason: editReason.trim(), payload: parsed.data, ...(typeof idempotencyKey === "string" ? { idempotencyKey: idempotencyKey.trim() } : {}) };
 }
 
 function contentVersionResponse(row: Record<string, unknown>) {

@@ -1,20 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { ChannelRecordSchema, ProductCreateInputSchema, ProductRecordSchema } from "@social-agent/contracts/product";
+import { ChannelRecordSchema, ProductRecordSchema } from "@social-agent/contracts/product";
 import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../../lib/supabase/server";
 import { HttpError } from "../../../lib/auth";
-
-function normalizeProductRequest(input: unknown): unknown {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return input;
-  const record = input as Record<string, unknown>;
-  return { ...record, slug: typeof record.slug === "string" ? record.slug.trim().toLowerCase() : record.slug };
-}
-
-export function parseProductRequest(input: unknown) {
-  const parsed = ProductCreateInputSchema.safeParse(normalizeProductRequest(input));
-  if (!parsed.success) throw new Error("INVALID_PRODUCT_INPUT");
-  return parsed.data;
-}
+import { parseProductRequest } from "../../../lib/api-inputs";
 
 function errorCode(error: unknown): string {
   if (error instanceof HttpError) return error.code;

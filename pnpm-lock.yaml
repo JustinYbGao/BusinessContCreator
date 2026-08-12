@@ -42,6 +42,12 @@ importers:
       '@social-agent/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@social-agent/llm':
+        specifier: workspace:*
+        version: link:../../packages/llm
+      '@social-agent/review-engine':
+        specifier: workspace:*
+        version: link:../../packages/review-engine
       '@supabase/ssr':
         specifier: ^0.7.0
         version: 0.7.0(@supabase/supabase-js@2.57.4)
@@ -115,6 +121,18 @@ importers:
       '@social-agent/contracts':
         specifier: workspace:*
         version: link:../contracts
+
+  packages/review-engine:
+    dependencies:
+      '@social-agent/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@social-agent/llm':
+        specifier: workspace:*
+        version: link:../llm
+      zod:
+        specifier: ^4.0.0
+        version: 4.4.3
 
   packages/topic-engine:
     dependencies:

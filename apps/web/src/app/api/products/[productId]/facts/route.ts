@@ -1,19 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { ProductCategorySchema, ProductFactDecisionSchema, ProductFactRecordSchema, ProductSourceRecordSchema } from "@social-agent/contracts/product";
+import { ProductCategorySchema, ProductFactRecordSchema, ProductSourceRecordSchema } from "@social-agent/contracts/product";
 import { z } from "zod";
 import { HttpError } from "../../../../../lib/auth";
 import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../../../../lib/supabase/server";
+import { parseFactAction } from "../../../../../lib/api-inputs";
 
-const FactActionSchema = z.object({ factId: z.string().uuid(), ...ProductFactDecisionSchema.shape }).strict();
 const ManualFactSchema = z.object({ statement: z.string().trim().min(1).max(2_000), category: ProductCategorySchema, sourceNote: z.string().trim().min(1).max(500) }).strict();
 type RouteContext = { params: Promise<{ productId: string }> };
-
-export function parseFactAction(input: unknown) {
-  const parsed = FactActionSchema.safeParse(input);
-  if (!parsed.success || (parsed.data.decision === "edit-and-verify" && !parsed.data.editedStatement)) throw new Error("INVALID_FACT_ACTION");
-  return parsed.data;
-}
 
 function codeOf(error: unknown): string {
   if (error instanceof HttpError) return error.code;
