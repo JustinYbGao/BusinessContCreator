@@ -18,7 +18,7 @@ function errorStatus(code: string): number {
   if (code === "ADMIN_REQUIRED") return 403;
   if (code === "INVALID_APPROVE_INPUT") return 400;
   if (code === "CONTENT_VERSION_NOT_FOUND" || code === "CONTENT_NOT_FOUND") return 404;
-  if (code === "CONTENT_VERSION_IMMUTABLE" || code === "CURRENT_REVIEW_REQUIRED" || code === "CURRENT_REVIEW_NOT_PASSED" || code === "CURRENT_REVIEW_UNAVAILABLE" || code === "CONTENT_VERSION_CHANGED" || code === "ACTOR_ID_INVALID") return 409;
+  if (code === "CONTENT_VERSION_IMMUTABLE" || code === "CURRENT_REVIEW_REQUIRED" || code === "CURRENT_REVIEW_NOT_PASSED" || code === "CURRENT_REVIEW_UNAVAILABLE" || code === "CONTENT_VERSION_CHANGED" || code === "REVIEW_CONTEXT_CHANGED" || code === "ACTOR_ID_INVALID") return 409;
   return 500;
 }
 
@@ -54,12 +54,13 @@ async function getApprovalRevalidationInputs(
       .eq("product_id", productId)
       .is("content_version_id", null),
     supabase.from("content_versions")
-      .select("id,content_id,payload")
+      .select("id,content_id,payload,created_at")
       .eq("workspace_id", workspaceId)
       .eq("product_id", productId)
       .eq("status", "approved")
       .neq("id", contentVersionId)
       .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
       .limit(30),
   ]);
   if (factsResult.error || assetsResult.error || recentResult.error) throw new Error("CURRENT_REVIEW_UNAVAILABLE");
@@ -180,6 +181,7 @@ export async function POST(
     if (approveError || !approved) {
       const message = approveError?.message ?? "";
       if (message.includes("CONTENT_VERSION_CHANGED")) throw new Error("CONTENT_VERSION_CHANGED");
+      if (message.includes("REVIEW_CONTEXT_CHANGED")) throw new Error("REVIEW_CONTEXT_CHANGED");
       if (message.includes("CURRENT_REVIEW_NOT_PASSED")) throw new Error("CURRENT_REVIEW_NOT_PASSED");
       throw new Error("CONTENT_APPROVAL_FAILED");
     }

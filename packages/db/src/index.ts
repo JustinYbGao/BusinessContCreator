@@ -113,7 +113,7 @@ export interface AssetRepository {
   listGeneratedForVersion(ctx: Pick<RepositoryContext, "workspaceId">, contentVersionId: string): Promise<AssetRecord[]>;
 }
 export interface ReviewRepository {
-  replaceCurrentRun(ctx: RepositoryContext, contentVersionId: string, findings: { code: string; severity: "blocking" | "advisory"; message: string }[]): Promise<ReviewRunRecord>;
+  replaceCurrentRun(ctx: RepositoryContext, contentVersionId: string, reviewContext: unknown, findings: { code: string; severity: "blocking" | "advisory"; message: string }[]): Promise<ReviewRunRecord>;
   getCurrent(ctx: Pick<RepositoryContext, "workspaceId">, contentVersionId: string): Promise<ReviewRunRecord | null>;
 }
 export interface PublicationRepository {

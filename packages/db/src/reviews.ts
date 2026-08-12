@@ -7,10 +7,11 @@ const mapRun = (row: Record<string, any>): ReviewRunRecord => ({
 });
 export class SupabaseReviewRepository implements ReviewRepository {
   constructor(private readonly db: DatabaseClient) {}
-  async replaceCurrentRun(ctx: RepositoryContext, contentVersionId: string, findings: { code: string; severity: "blocking" | "advisory"; message: string }[]) {
-    const { data, error } = await this.db.rpc("replace_current_review_run", {
+  async replaceCurrentRun(ctx: RepositoryContext, contentVersionId: string, reviewContext: unknown, findings: { code: string; severity: "blocking" | "advisory"; message: string }[]) {
+    const { data, error } = await this.db.rpc("replace_current_review_run_with_context", {
       p_workspace_id: ctx.workspaceId, p_content_version_id: contentVersionId,
-      p_findings: findings, p_actor_type: ctx.actor.type, p_actor_id: ctx.actor.id,
+      p_findings: findings, p_review_context: reviewContext,
+      p_actor_type: ctx.actor.type, p_actor_id: ctx.actor.id,
       p_request_id: ctx.requestId,
     });
     if (error || !data) throw databaseError(error);

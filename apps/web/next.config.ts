@@ -2,6 +2,10 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  env: {
+    NEXT_PUBLIC_SOCIAL_AGENT_SUPABASE_URL: process.env.SOCIAL_AGENT_SUPABASE_URL,
+    NEXT_PUBLIC_SOCIAL_AGENT_SUPABASE_ANON_KEY: process.env.SOCIAL_AGENT_SUPABASE_ANON_KEY,
+  },
   webpack(config) {
     config.resolve.extensionAlias = {
       ...config.resolve.extensionAlias,

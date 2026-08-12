@@ -17,8 +17,8 @@ export async function createSupabaseServerClient() {
   const cookieStore = await cookies();
 
   return createServerClient(
-    requiredServerEnv("NEXT_PUBLIC_SUPABASE_URL"),
-    requiredServerEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
+    requiredServerEnv("SOCIAL_AGENT_SUPABASE_URL"),
+    requiredServerEnv("SOCIAL_AGENT_SUPABASE_ANON_KEY"),
     {
       cookies: {
         getAll() {
@@ -38,8 +38,8 @@ export async function createSupabaseServerClient() {
 
 export function createSupabaseServiceRoleClient(): SupabaseClient {
   return createClient(
-    requiredServerEnv("NEXT_PUBLIC_SUPABASE_URL"),
-    requiredServerEnv("SUPABASE_SERVICE_ROLE_KEY"),
+    requiredServerEnv("SOCIAL_AGENT_SUPABASE_URL"),
+    requiredServerEnv("SOCIAL_AGENT_SUPABASE_SERVICE_ROLE_KEY"),
     { auth: { persistSession: false, autoRefreshToken: false } },
   );
 }

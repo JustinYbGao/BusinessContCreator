@@ -4,8 +4,8 @@ import { NextResponse, type NextRequest } from "next/server";
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const url = process.env.NEXT_PUBLIC_SOCIAL_AGENT_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SOCIAL_AGENT_SUPABASE_ANON_KEY;
   if (!url || !anonKey) {
     return NextResponse.redirect(new URL("/login", request.url));
   }

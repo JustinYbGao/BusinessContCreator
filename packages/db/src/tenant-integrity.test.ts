@@ -259,6 +259,7 @@ describe("Supabase tenant and durability integration", () => {
       p_job_id: reviewJobId,
       p_worker_id: "review-worker",
       p_content_version_id: foreign.versionId,
+      p_review_context: {},
       p_findings: [],
       p_result: {},
       p_audit_event: jobAudit("review-worker", reviewJobId),
@@ -424,12 +425,13 @@ describe("Supabase tenant and durability integration", () => {
   it("enforces current-review semantics", async () => {
     const fixture = await createContentFixture(service, "review");
     const reviews = new SupabaseReviewRepository(service);
-    const first = await reviews.replaceCurrentRun(context(), fixture.versionId, [{
+    const reviewContext = await readReviewContext(service, fixture.versionId);
+    const first = await reviews.replaceCurrentRun(context(), fixture.versionId, reviewContext, [{
       code: "FIRST",
       severity: "blocking",
       message: "first",
     }]);
-    const second = await reviews.replaceCurrentRun(context(), fixture.versionId, []);
+    const second = await reviews.replaceCurrentRun(context(), fixture.versionId, reviewContext, []);
 
     expect(first.runNumber).toBe(1);
     expect(second.runNumber).toBe(2);
@@ -442,7 +444,7 @@ describe("Supabase tenant and durability integration", () => {
     const versions = new SupabaseContentVersionRepository(service);
     const publications = new SupabasePublicationRepository(service);
     const assets = new SupabaseAssetRepository(service);
-    await new SupabaseReviewRepository(service).replaceCurrentRun(context(), fixture.versionId, []);
+    await new SupabaseReviewRepository(service).replaceCurrentRun(context(), fixture.versionId, await readReviewContext(service, fixture.versionId), []);
     await versions.approve(context(), fixture.versionId);
 
     await expect(publications.create(context(), {
@@ -465,7 +467,7 @@ describe("Supabase tenant and durability integration", () => {
     const versions = new SupabaseContentVersionRepository(service);
     const publications = new SupabasePublicationRepository(service);
     const assets = new SupabaseAssetRepository(service);
-    await new SupabaseReviewRepository(service).replaceCurrentRun(context(), fixture.versionId, []);
+    await new SupabaseReviewRepository(service).replaceCurrentRun(context(), fixture.versionId, await readReviewContext(service, fixture.versionId), []);
     await versions.approve(context(), fixture.versionId);
 
     for (const [index, asset] of fixture.pageAssets.entries()) {
@@ -829,6 +831,18 @@ async function createContentFixture(
       publicUseAllowed: true,
     })),
   };
+}
+
+async function readReviewContext(
+  service: ReturnType<typeof createSupabaseClient>,
+  contentVersionId: string,
+) {
+  const { data, error } = await service.rpc("review_context_for_version", {
+    p_workspace_id: SEEDED_WORKSPACE_ID,
+    p_content_version_id: contentVersionId,
+  });
+  expect(error).toBeNull();
+  return data;
 }
 
 function pageSha256(index: number): string {

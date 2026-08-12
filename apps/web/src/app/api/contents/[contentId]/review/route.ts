@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { ContentDraftSchema } from "@social-agent/contracts/content";
 import { OpenAiCompatibleClient } from "@social-agent/llm";
-import { reviewContent, type ReviewFact, type ReviewSourceAsset } from "@social-agent/review-engine";
+import { buildReviewContext, reviewContent, type ReviewFact, type ReviewSourceAsset } from "@social-agent/review-engine";
 import { z } from "zod";
 import { HttpError } from "../../../../../lib/auth";
 import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../../../../lib/supabase/server";
@@ -20,6 +20,7 @@ function errorStatus(code: string): number {
   if (code === "INVALID_REVIEW_INPUT" || code === "CONTENT_ID_INVALID") return 400;
   if (code === "CONTENT_NOT_FOUND" || code === "CONTENT_VERSION_REQUIRED" || code === "CONTENT_VERSION_NOT_FOUND") return 404;
   if (code === "CONTENT_VERSION_IMMUTABLE" || code === "CONTENT_SCOPE_MISMATCH") return 409;
+  if (code === "REVIEW_CONTEXT_CHANGED") return 409;
   if (code === "LLM_NOT_CONFIGURED" || code === "LLM_UNAVAILABLE") return 503;
   return 500;
 }
@@ -80,6 +81,7 @@ async function getReviewInputs(
   workspaceId: string,
   productId: string,
   contentVersionId: string,
+  payload: unknown,
 ) {
   const [factsResult, assetsResult, recentResult] = await Promise.all([
     supabase.from("product_facts")
@@ -92,12 +94,13 @@ async function getReviewInputs(
       .eq("product_id", productId)
       .is("content_version_id", null),
     supabase.from("content_versions")
-      .select("id,content_id,payload")
+      .select("id,content_id,payload,created_at")
       .eq("workspace_id", workspaceId)
       .eq("product_id", productId)
       .eq("status", "approved")
       .neq("id", contentVersionId)
       .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
       .limit(30),
   ]);
   if (factsResult.error) throw new Error("FACTS_UNAVAILABLE");
@@ -127,7 +130,14 @@ async function getReviewInputs(
     const draft = ContentDraftSchema.safeParse(row.payload);
     return draft.success ? [{ id: row.content_id, contentVersionId: row.id, draft: draft.data }] : [];
   });
-  return { facts, sourceAssets, recentApprovedContents };
+  const reviewContext = buildReviewContext({
+    contentVersionId,
+    payload,
+    facts: factsResult.data ?? [],
+    sourceAssets: assetsResult.data ?? [],
+    recentApprovedContents: recentResult.data ?? [],
+  });
+  return { facts, sourceAssets, recentApprovedContents, reviewContext };
 }
 
 export async function POST(
@@ -147,7 +157,7 @@ export async function POST(
     const input = parseReviewContentRequest(body);
     const supabase = createSupabaseServiceRoleClient();
     const { content, version } = await getContentAndVersion(supabase, identity.workspaceId, contentId, input.contentVersionId);
-    const reviewInputs = await getReviewInputs(supabase, identity.workspaceId, content.product_id, version.id);
+    const reviewInputs = await getReviewInputs(supabase, identity.workspaceId, content.product_id, version.id, version.payload);
     const result = await reviewContent({
       workspaceId: identity.workspaceId,
       productId: content.product_id,
@@ -156,14 +166,16 @@ export async function POST(
       ...reviewInputs,
     }, new OpenAiCompatibleClient());
     const findings = result.findings.map(({ code, severity, message }) => ({ code, severity, message }));
-    const { data: reviewRun, error: reviewRunError } = await supabase.rpc("replace_current_review_run", {
+    const { data: reviewRun, error: reviewRunError } = await supabase.rpc("replace_current_review_run_with_context", {
       p_workspace_id: identity.workspaceId,
       p_content_version_id: version.id,
       p_findings: findings,
+      p_review_context: reviewInputs.reviewContext,
       p_actor_type: "user",
       p_actor_id: identity.userId,
       p_request_id: requestId(request, input.idempotencyKey),
     });
+    if (reviewRunError?.message.includes("REVIEW_CONTEXT_CHANGED")) throw new Error("REVIEW_CONTEXT_CHANGED");
     if (reviewRunError || !reviewRun) throw new Error("REVIEW_RUN_CREATE_FAILED");
     return NextResponse.json({
       reviewRun: {

@@ -41,7 +41,7 @@ export async function POST(request: Request) {
 
   if (parsed.data.website?.trim()) return responseOk();
 
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const serviceRoleKey = process.env.SOCIAL_AGENT_SUPABASE_SERVICE_ROLE_KEY;
   if (!serviceRoleKey) {
     return NextResponse.json({ ok: false, error: "WAITLIST_NOT_CONFIGURED" }, { status: 500 });
   }
