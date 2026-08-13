@@ -443,7 +443,6 @@ describe("Supabase tenant and durability integration", () => {
     const fixture = await createContentFixture(service, "publication");
     const versions = new SupabaseContentVersionRepository(service);
     const publications = new SupabasePublicationRepository(service);
-    const assets = new SupabaseAssetRepository(service);
     await new SupabaseReviewRepository(service).replaceCurrentRun(context(), fixture.versionId, await readReviewContext(service, fixture.versionId), []);
     await versions.approve(context(), fixture.versionId);
 
@@ -453,7 +452,7 @@ describe("Supabase tenant and durability integration", () => {
     })).rejects.toThrow("ASSET_SET_INVALID");
 
     await uploadVerifiedPageAssets(service, fixture.pageAssets);
-    await assets.insertCandidates(context(), fixture.pageAssets);
+    await insertVerifiedPageAssets(service, fixture.pageAssets);
     const publication = await publications.create(context(), {
       contentVersionId: fixture.versionId,
       idempotencyKey: `publication:${fixture.versionId}`,
@@ -466,7 +465,6 @@ describe("Supabase tenant and durability integration", () => {
     const fixture = await createContentFixture(service, "publication-hash-mismatch");
     const versions = new SupabaseContentVersionRepository(service);
     const publications = new SupabasePublicationRepository(service);
-    const assets = new SupabaseAssetRepository(service);
     await new SupabaseReviewRepository(service).replaceCurrentRun(context(), fixture.versionId, await readReviewContext(service, fixture.versionId), []);
     await versions.approve(context(), fixture.versionId);
 
@@ -481,7 +479,7 @@ describe("Supabase tenant and durability integration", () => {
       );
       expect(error).toBeNull();
     }
-    await assets.insertCandidates(context(), fixture.pageAssets);
+    await insertVerifiedPageAssets(service, fixture.pageAssets);
     await expect(publications.create(context(), {
       contentVersionId: fixture.versionId,
       idempotencyKey: `publication:${fixture.versionId}`,
@@ -526,7 +524,7 @@ describe("Supabase tenant and durability integration", () => {
     }, {
       productId: fixture.productId,
       contentVersionId: fixture.versionId,
-      objectKey: `staging/${fixture.versionId}/candidate.png`,
+      objectKey: `workspaces/${SEEDED_WORKSPACE_ID}/products/${fixture.productId}/contents/${fixture.versionId}/page-1-${"d".repeat(64)}.png`,
       sha256: "d".repeat(64),
       verificationStatus: "candidate",
       publicUseAllowed: false,
@@ -825,7 +823,7 @@ async function createContentFixture(
     pageAssets: pageHashes.map((sha256, index) => ({
       productId: product.id,
       contentVersionId: version.id,
-      objectKey: `staging/${version.id}/${index + 1}.png`,
+      objectKey: `workspaces/${workspaceId}/products/${product.id}/contents/${version.id}/page-${index + 1}-${sha256}.png`,
       sha256,
       verificationStatus: "verified" as const,
       publicUseAllowed: true,
@@ -864,6 +862,30 @@ async function uploadVerifiedPageAssets(
     );
     expect(error).toBeNull();
   }
+}
+
+async function insertVerifiedPageAssets(
+  service: ReturnType<typeof createSupabaseClient>,
+  pageAssets: { productId: string; contentVersionId: string; objectKey: string; sha256: string }[],
+) {
+  const { error } = await service.from("assets").insert(pageAssets.map((asset) => ({
+    workspace_id: SEEDED_WORKSPACE_ID,
+    product_id: asset.productId,
+    content_version_id: asset.contentVersionId,
+    kind: "carousel_page",
+    provenance: "generated",
+    verification_status: "verified",
+    public_use_allowed: true,
+    verified_by: crypto.randomUUID(),
+    verified_at: new Date().toISOString(),
+    object_key: asset.objectKey,
+    mime_type: "image/png",
+    byte_size: 1,
+    width: 1080,
+    height: 1440,
+    sha256: asset.sha256,
+  })));
+  expect(error).toBeNull();
 }
 
 async function createWorkspace(
