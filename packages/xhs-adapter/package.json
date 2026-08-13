@@ -1,0 +1,23 @@
+{
+  "name": "@social-agent/xhs-adapter",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package": "./src/package.ts",
+    "./prefill": "./src/prefill.ts",
+    "./safety-guard": "./src/safety-guard.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@social-agent/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "playwright": "1.55.0"
+  }
+}

@@ -13,6 +13,7 @@ const navigation = [
   ["审核", "/app/review"],
   ["发布", "/app/publications"],
   ["复盘", "/app/analytics"],
+  ["设置", "/app/settings/publisher-devices"],
 ] as const;
 
 async function loadIdentity() {

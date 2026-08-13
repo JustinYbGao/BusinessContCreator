@@ -1,0 +1,17 @@
+{
+  "name": "@social-agent/local-publisher",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "tsx src/index.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@social-agent/contracts": "workspace:*",
+    "@social-agent/xhs-adapter": "workspace:*",
+    "playwright": "1.55.0"
+  }
+}

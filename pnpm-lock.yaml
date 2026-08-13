@@ -31,6 +31,18 @@ importers:
         specifier: ^4.0.0
         version: 4.1.10(@types/node@20.19.43)(vite@8.2.1(@types/node@20.19.43)(esbuild@0.28.2)(tsx@4.23.11))
 
+  apps/local-publisher:
+    dependencies:
+      '@social-agent/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@social-agent/xhs-adapter':
+        specifier: workspace:*
+        version: link:../../packages/xhs-adapter
+      playwright:
+        specifier: 1.55.0
+        version: 1.55.0
+
   apps/web:
     dependencies:
       '@social-agent/content-engine':
@@ -48,6 +60,9 @@ importers:
       '@social-agent/review-engine':
         specifier: workspace:*
         version: link:../../packages/review-engine
+      '@social-agent/xhs-adapter':
+        specifier: workspace:*
+        version: link:../../packages/xhs-adapter
       '@supabase/ssr':
         specifier: ^0.7.0
         version: 0.7.0(@supabase/supabase-js@2.57.4)
@@ -184,6 +199,16 @@ importers:
       sharp:
         specifier: ^0.35.3
         version: 0.35.3(@types/node@20.19.43)
+
+  packages/xhs-adapter:
+    dependencies:
+      '@social-agent/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+    devDependencies:
+      playwright:
+        specifier: 1.55.0
+        version: 1.55.0
 
 packages:
 

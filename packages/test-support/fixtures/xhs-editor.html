@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head><meta charset="utf-8"><title>小红书创作中心 Fixture</title></head>
+  <body>
+    <main>
+      <div data-test="login" hidden>登录后继续</div>
+      <div data-test="captcha" hidden>CAPTCHA</div>
+      <form data-test="editor-form">
+        <input data-test="image-upload" type="file" accept="image/png" multiple>
+        <div data-test="uploaded-count">0</div>
+        <input data-test="title" name="title" aria-label="标题">
+        <textarea data-test="body" name="body" aria-label="正文"></textarea>
+        <button data-test="final-publish" type="submit">发布</button>
+        <span data-test="publish-click-count">0</span>
+      </form>
+    </main>
+    <script>
+      const params = new URLSearchParams(location.hash.slice(1));
+      const login = document.querySelector('[data-test="login"]');
+      const captcha = document.querySelector('[data-test="captcha"]');
+      const form = document.querySelector('[data-test="editor-form"]');
+      const fileInput = document.querySelector('[data-test="image-upload"]');
+      const count = document.querySelector('[data-test="uploaded-count"]');
+      const title = document.querySelector('[data-test="title"]');
+      const body = document.querySelector('[data-test="body"]');
+      const publishCount = document.querySelector('[data-test="publish-click-count"]');
+      if (params.has('login')) login.hidden = false;
+      if (params.has('captcha')) captcha.hidden = false;
+      fileInput.addEventListener('change', () => { count.textContent = String(fileInput.files.length); });
+      body.addEventListener('input', () => {
+        if (params.has('tamper')) body.value = '被篡改的正文';
+      });
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        publishCount.textContent = String(Number(publishCount.textContent) + 1);
+      });
+    </script>
+  </body>
+</html>
