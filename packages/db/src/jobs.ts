@@ -94,18 +94,19 @@ export class SupabaseJobRepository implements JobRepository {
   }
 
   async fail(ctx: RepositoryContext, jobId: string, workerId: string, errorMessage: string, retryAt: Date | null): Promise<void> {
-    const { data, error } = await this.db.rpc("fail_workflow_job", {
+    const functionName = retryAt ? "fail_workflow_job" : "terminalize_workflow_job";
+    const { data, error } = await this.db.rpc(functionName, {
       p_workspace_id: ctx.workspaceId,
       p_job_id: jobId,
       p_worker_id: workerId,
       p_error: errorMessage,
-      p_retry_at: retryAt?.toISOString() ?? null,
       p_audit_event: auditInput(ctx, {
         action: retryAt ? "workflow_job.requeued" : "workflow_job.failed",
         entityType: "workflow_job",
         entityId: jobId,
         payload: { error: errorMessage },
       }),
+      ...(retryAt ? { p_retry_at: retryAt.toISOString() } : {}),
     });
     if (error) throw databaseError(error);
     if (data !== true) throw new Error("LEASE_LOST");

@@ -33,6 +33,39 @@ function idempotencyKeyFrom(request: Request, productId: string): string {
   return value;
 }
 
+async function findDeletionAudit(
+  supabase: ReturnType<typeof createSupabaseServiceRoleClient>,
+  workspaceId: string,
+  productId: string,
+  requestId: string,
+): Promise<string> {
+  const current = await supabase.from("audit_events")
+    .select("id")
+    .eq("workspace_id", workspaceId)
+    .eq("product_id", productId)
+    .eq("request_id", requestId)
+    .eq("action", "product.soft_deleted")
+    .eq("entity_type", "product")
+    .eq("entity_id", productId)
+    .limit(1)
+    .maybeSingle();
+  if (current.error) throw new Error("PURGE_CONFIRMATION_UNAVAILABLE");
+  if (current.data?.id) return String(current.data.id);
+
+  const prior = await supabase.from("audit_events")
+    .select("id")
+    .eq("workspace_id", workspaceId)
+    .eq("product_id", productId)
+    .eq("action", "product.soft_deleted")
+    .eq("entity_type", "product")
+    .eq("entity_id", productId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (prior.error || !prior.data?.id) throw new Error("PURGE_CONFIRMATION_UNAVAILABLE");
+  return String(prior.data.id);
+}
+
 export async function GET(_request: Request, context: RouteContext) {
   try {
     const identity = await requireServerInternalAdmin();
@@ -90,10 +123,12 @@ export async function DELETE(request: Request, context: RouteContext) {
     }
     const productRecord = ProductRecordSchema.parse(product);
 
+    const deletionAudit = await findDeletionAudit(supabase, identity.workspaceId, productId, requestId);
+
     const idempotencyKey = idempotencyKeyFrom(request, productId);
     let purgeJob;
     let createdPurgeJob = false;
-    const { data: insertedPurgeJob, error: jobError } = await supabase.from("workflow_jobs").insert({ workspace_id: identity.workspaceId, product_id: productId, kind: "purge_product", idempotency_key: idempotencyKey, payload: { reason: "operator-requested-product-purge" }, status: "queued" }).select("id,status").single();
+    const { data: insertedPurgeJob, error: jobError } = await supabase.from("workflow_jobs").insert({ workspace_id: identity.workspaceId, product_id: productId, kind: "purge_product", idempotency_key: idempotencyKey, payload: { reason: "operator-requested-product-purge", confirmationAuditId: deletionAudit }, status: "queued" }).select("id,status").single();
     if (jobError?.code === "23505") {
       const existing = await supabase.from("workflow_jobs").select("id,status").eq("workspace_id", identity.workspaceId).eq("idempotency_key", idempotencyKey).maybeSingle();
       if (existing.error || !existing.data) throw new Error("PURGE_JOB_UNAVAILABLE");

@@ -1,0 +1,23 @@
+{
+  "name": "@social-agent/worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "tsx src/index.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@social-agent/content-engine": "workspace:*",
+    "@social-agent/contracts": "workspace:*",
+    "@social-agent/db": "workspace:*",
+    "@social-agent/dormchef-adapter": "workspace:*",
+    "@social-agent/llm": "workspace:*",
+    "@social-agent/review-engine": "workspace:*",
+    "@social-agent/topic-engine": "workspace:*",
+    "@social-agent/visual-engine": "workspace:*",
+    "@supabase/supabase-js": "2.57.4"
+  }
+}

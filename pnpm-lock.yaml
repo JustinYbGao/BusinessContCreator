@@ -74,6 +74,36 @@ importers:
         specifier: ^19.0.0
         version: 19.2.4(@types/react@19.2.18)
 
+  apps/worker:
+    dependencies:
+      '@social-agent/content-engine':
+        specifier: workspace:*
+        version: link:../../packages/content-engine
+      '@social-agent/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@social-agent/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@social-agent/dormchef-adapter':
+        specifier: workspace:*
+        version: link:../../packages/dormchef-adapter
+      '@social-agent/llm':
+        specifier: workspace:*
+        version: link:../../packages/llm
+      '@social-agent/review-engine':
+        specifier: workspace:*
+        version: link:../../packages/review-engine
+      '@social-agent/topic-engine':
+        specifier: workspace:*
+        version: link:../../packages/topic-engine
+      '@social-agent/visual-engine':
+        specifier: workspace:*
+        version: link:../../packages/visual-engine
+      '@supabase/supabase-js':
+        specifier: 2.57.4
+        version: 2.57.4
+
   packages/content-engine:
     dependencies:
       '@social-agent/contracts':
