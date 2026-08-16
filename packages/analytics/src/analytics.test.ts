@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   calculateRates,
+  buildRetrospective,
+  buildRollingMedian,
+  buildWeeklyReport,
   parseMetricImport,
   summarizeConversions,
+  type ComparableMetricSample,
   type MetricImportRow,
 } from "./index.js";
 
@@ -179,5 +183,125 @@ describe("bounded metric imports", () => {
     expect(parsed.errors).toEqual([]);
     expect(parsed.rows[0]?.metrics.impressions).toBeNull();
     expect(parsed.rows[0]?.metrics.views).toBeNull();
+  });
+});
+
+const CAMPAIGN_ID = "00000000-0000-4000-8000-000000000004";
+
+function sample(
+  publicationId: string,
+  views: number,
+  likes: number,
+  publishedAt = "2026-08-01T10:00:00.000Z",
+): ComparableMetricSample {
+  return {
+    publicationId,
+    productId: PRODUCT_ID,
+    campaignId: CAMPAIGN_ID,
+    status: "PUBLISHED",
+    publishedAt,
+    snapshots: [{
+      id: `snapshot-${publicationId}`,
+      window: "24h",
+      metrics: {
+        impressions: views * 2,
+        views,
+        likes,
+        saves: 2,
+        comments: 1,
+        shares: 1,
+        followersGained: 3,
+      },
+      productConversion: [],
+      capturedAt: "2026-08-02T10:00:00.000Z",
+    }],
+  };
+}
+
+describe("analytics baselines and reports", () => {
+  it("builds a null-skipping rolling median and excludes the current publication", () => {
+    const current = sample(PUBLICATION_ID, 999, 999);
+    const missingImpressions = sample("pub-c", 500, 50);
+    const snapshot = missingImpressions.snapshots[0];
+    if (!snapshot) throw new Error("fixture snapshot missing");
+    snapshot.metrics.impressions = null;
+
+    const result = buildRollingMedian({
+      currentPublicationId: current.publicationId,
+      window: "24h",
+      samples: [
+        sample("pub-a", 100, 10),
+        sample("pub-b", 300, 30),
+        current,
+        missingImpressions,
+      ],
+    });
+
+    expect(result.sampleCount).toBe(3);
+    expect(result.medians.views).toBe(300);
+    expect(result.sourcePublicationIds).toEqual(["pub-a", "pub-b", "pub-c"]);
+  });
+
+  function retrospectiveInput(sampleCount: number) {
+    const current = sample(PUBLICATION_ID, 200, 20);
+    return {
+      currentPublication: current,
+      currentSnapshot: current.snapshots[0] ?? null,
+      comparableSamples: Array.from({ length: sampleCount }, (_, index) => sample(`history-${index}`, 100, 10)),
+    };
+  }
+
+  it("uses hypothesis below ten samples and directional at ten samples", () => {
+    expect(buildRetrospective(retrospectiveInput(9)).confidence).toBe("hypothesis");
+    expect(buildRetrospective(retrospectiveInput(10)).confidence).toBe("directional");
+  });
+
+  it("refuses an evidence-qualified Learning when the requested window is absent", () => {
+    expect(() => buildRetrospective({
+      ...retrospectiveInput(10),
+      currentSnapshot: null,
+    })).toThrow("EVIDENCE_WINDOW_INCOMPLETE");
+  });
+
+  it("keeps due, missing, and not-yet-due windows distinct", () => {
+    const oldPost = {
+      ...sample("old-post", 100, 10, "2026-08-15T10:00:00.000Z"),
+      snapshots: [],
+    };
+    const freshPost = {
+      ...sample("fresh-post", 100, 10, "2026-08-16T10:00:00.000Z"),
+      snapshots: [],
+    };
+    const report = buildWeeklyReport({
+      weekStart: "2026-08-10",
+      now: new Date("2026-08-16T12:00:00.000Z"),
+      publications: [oldPost, freshPost],
+      eligibleLearningIds: [],
+    });
+
+    expect(report.dueWindows).toContainEqual({ publicationId: "old-post", window: "24h" });
+    expect(report.missingWindows).toContainEqual({ publicationId: "old-post", window: "24h" });
+    expect(report.notYetDueWindows).toContainEqual({ publicationId: "fresh-post", window: "24h" });
+  });
+
+  it("counts each captured conversion observation once in a weekly report", () => {
+    const post = sample("conversion-post", 100, 10, "2026-08-15T10:00:00.000Z");
+    const snapshot = post.snapshots[0];
+    if (!snapshot) throw new Error("fixture snapshot missing");
+    snapshot.productConversion = [{
+      event: "activation",
+      count: 2,
+      attribution: "direct",
+      confidence: "high",
+    }];
+
+    const report = buildWeeklyReport({
+      weekStart: "2026-08-10",
+      now: new Date("2026-08-16T12:00:00.000Z"),
+      publications: [post],
+      eligibleLearningIds: [],
+    });
+
+    expect(report.conversions).toEqual({ direct: 2, selfReported: 0, inferred: 0 });
   });
 });
