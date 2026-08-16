@@ -13,7 +13,7 @@ import {
 
 const PublishInputSchema = z.object({
   publicUrl: z.string().trim().url().max(2_000),
-  publishedAt: z.string().datetime({ offset: true }),
+  publishedAt: z.string().trim().min(1).max(100),
 }).strict();
 
 const KNOWN_CODES = [
@@ -58,21 +58,39 @@ function allowedPublicUrl(value: string): boolean {
   }
 }
 
+function normalizePublishedAt(value: string): string {
+  if (z.string().datetime({ offset: true }).safeParse(value).success) return value;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) return `${value}:00+08:00`;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(value)) return `${value}+08:00`;
+  throw new Error("INVALID_PUBLICATION_INPUT");
+}
+
+async function parsePublishBody(request: Request): Promise<unknown> {
+  if ((request.headers.get("content-type") ?? "").includes("application/json")) {
+    try {
+      return await request.json();
+    } catch {
+      throw new Error("INVALID_PUBLICATION_INPUT");
+    }
+  }
+  const form = await request.formData();
+  return {
+    publicUrl: form.get("publicUrl"),
+    publishedAt: form.get("publishedAt"),
+  };
+}
+
 export async function POST(request: Request, context: RouteContext) {
   try {
     const identity = await requireServerInternalAdmin();
     const { publicationId: rawPublicationId } = await context.params;
     const publicationId = parseUuid(rawPublicationId, "INVALID_PUBLICATION_ID");
-    let body: unknown;
-    try {
-      body = await request.json();
-    } catch {
-      throw new Error("INVALID_PUBLICATION_INPUT");
-    }
+    const body = await parsePublishBody(request);
     const parsed = PublishInputSchema.safeParse(body);
     if (!parsed.success || !allowedPublicUrl(parsed.data?.publicUrl ?? "")) {
       throw new Error(parsed.success ? "PUBLICATION_URL_INVALID" : "INVALID_PUBLICATION_INPUT");
     }
+    const publishedAt = normalizePublishedAt(parsed.data.publishedAt);
     const supabase = createSupabaseServiceRoleClient();
     const publication = await new SupabasePublicationRepository(supabase).registerPublished({
       workspaceId: identity.workspaceId,
@@ -80,7 +98,7 @@ export async function POST(request: Request, context: RouteContext) {
       requestId: requestId(request),
     }, publicationId, {
       publicUrl: parsed.data.publicUrl,
-      publishedAt: parsed.data.publishedAt,
+      publishedAt,
     });
     return NextResponse.json({
       publicationId: publication.id,
