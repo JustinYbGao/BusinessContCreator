@@ -22,7 +22,7 @@ const state = vi.hoisted(() => ({
   supabase: { from: vi.fn() },
 }));
 
-vi.mock("/Users/justingao/Documents/SocialMediaAgent/.worktrees/task-11-analytics/apps/web/src/lib/supabase/server", () => ({
+vi.mock("../../lib/supabase/server", () => ({
   requireServerInternalAdmin: state.requireServerInternalAdmin,
   createSupabaseServiceRoleClient: vi.fn(() => state.supabase),
 }));
