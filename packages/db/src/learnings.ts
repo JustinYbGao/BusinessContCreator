@@ -8,10 +8,15 @@ const mapLearning = (row: Record<string, any>): LearningRecord => ({
 export class SupabaseLearningRepository implements LearningRepository {
   constructor(private readonly db: DatabaseClient) {}
   async create(ctx: RepositoryContext, input: Omit<LearningRecord, "id" | "workspaceId">) {
-    const { data, error } = await this.db.from("learnings").insert({
-      workspace_id: ctx.workspaceId, product_id: input.productId,
-      publication_id: input.publicationId, evidence_window: input.evidenceWindow, payload: input.payload,
-    }).select("*").single();
+    const { data, error } = await this.db.rpc("create_learning", {
+      p_workspace_id: ctx.workspaceId,
+      p_product_id: input.productId,
+      p_publication_id: input.publicationId,
+      p_evidence_window: input.evidenceWindow,
+      p_payload: input.payload,
+      p_actor_id: ctx.actor.id,
+      p_request_id: ctx.requestId,
+    });
     if (error || !data) throw databaseError(error);
     return mapLearning(data);
   }

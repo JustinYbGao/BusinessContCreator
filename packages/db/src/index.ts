@@ -62,6 +62,32 @@ export interface AssetRecord { id: string; workspaceId: string; productId: strin
 export interface ReviewRunRecord { id: string; contentVersionId: string; runNumber: number; isCurrent: boolean; result: "passed" | "blocked" }
 export interface LearningRecord { id: string; workspaceId: string; productId: string; publicationId: string; evidenceWindow: string; payload: unknown }
 export interface AuditEventRecord { id: string; workspaceId: string; productId: string | null; action: string; entityType: string; entityId: string | null; payload: unknown }
+export interface PublicationAnalyticsRecord extends Publication {
+  campaignId: string;
+  publicUrl: string | null;
+  publishedAt: string | null;
+}
+export interface MetricSnapshotRecord {
+  id: string;
+  publicationId: string;
+  window: "24h" | "72h" | "7d";
+  metrics: unknown;
+  productConversion: unknown;
+  importId: string;
+  capturedAt: string;
+}
+export interface CampaignPublicationMetrics extends PublicationAnalyticsRecord {
+  snapshots: MetricSnapshotRecord[];
+}
+export interface WeeklyReportRecord {
+  id: string;
+  workspaceId: string;
+  productId: string;
+  campaignId: string;
+  weekStart: string;
+  payload: unknown;
+  sourceSnapshotIds: string[];
+}
 
 export interface JobRepository {
   enqueueJob(ctx: RepositoryContext, input: { productId: string | null; kind: string; idempotencyKey: string; payload: unknown }): Promise<{ id: string; status: "queued" | "running" | "completed" | "failed" }>;
@@ -119,6 +145,8 @@ export interface ReviewRepository {
 export interface PublicationRepository {
   create(ctx: RepositoryContext, input: { contentVersionId: string; idempotencyKey: string }): Promise<Publication>;
   get(ctx: Pick<RepositoryContext, "workspaceId">, id: string): Promise<Publication | null>;
+  registerPublished(ctx: RepositoryContext, id: string, input: { publicUrl: string; publishedAt: string }): Promise<PublicationAnalyticsRecord>;
+  getAnalytics(ctx: Pick<RepositoryContext, "workspaceId">, id: string): Promise<PublicationAnalyticsRecord | null>;
   transition(ctx: RepositoryContext, id: string, expected: Publication["status"], next: Publication["status"]): Promise<Publication>;
   claimNextForDevice(ctx: RepositoryContext, deviceId: string): Promise<Publication | null>;
   transitionClaimedForDevice(ctx: RepositoryContext, deviceId: string, id: string, expected: Publication["status"], next: Publication["status"]): Promise<Publication>;
@@ -130,6 +158,11 @@ export interface LearningRepository {
 export interface MetricRepository {
   importSnapshots(ctx: RepositoryContext, input: { productId: string; format: "manual" | "csv" | "json"; rows: unknown[]; filenameSha256?: string }): Promise<{ importId: string; acceptedRows: number }>;
   listByPublication(ctx: Pick<RepositoryContext, "workspaceId">, publicationId: string): Promise<unknown[]>;
+  listForCampaign(ctx: Pick<RepositoryContext, "workspaceId">, productId: string, campaignId: string): Promise<CampaignPublicationMetrics[]>;
+}
+export interface WeeklyReportRepository {
+  createOrReplace(ctx: RepositoryContext, input: { productId: string; campaignId: string; weekStart: string; payload: unknown; sourceSnapshotIds: string[] }): Promise<WeeklyReportRecord>;
+  getByCampaignWeek(ctx: Pick<RepositoryContext, "workspaceId">, productId: string, campaignId: string, weekStart: string): Promise<WeeklyReportRecord | null>;
 }
 export interface PublisherDeviceRepository {
   create(ctx: RepositoryContext, name: string, tokenSha256: string): Promise<{ id: string; workspaceId: string }>;
@@ -155,6 +188,7 @@ export * from "./assets.js";
 export * from "./reviews.js";
 export * from "./learnings.js";
 export * from "./metrics.js";
+export * from "./weekly-reports.js";
 export * from "./publisher-devices.js";
 export * from "./waitlist.js";
 export * from "./audit.js";
