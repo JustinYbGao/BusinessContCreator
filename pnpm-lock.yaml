@@ -45,6 +45,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@social-agent/analytics':
+        specifier: workspace:*
+        version: link:../../packages/analytics
       '@social-agent/content-engine':
         specifier: workspace:*
         version: link:../../packages/content-engine
@@ -118,6 +121,12 @@ importers:
       '@supabase/supabase-js':
         specifier: 2.57.4
         version: 2.57.4
+
+  packages/analytics:
+    dependencies:
+      zod:
+        specifier: ^4.0.0
+        version: 4.4.3
 
   packages/content-engine:
     dependencies:
