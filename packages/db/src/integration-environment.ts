@@ -10,7 +10,12 @@ export function requireIntegrationEnvironment(env: NodeJS.ProcessEnv): Integrati
   const anonKey = requireValue(env, "SOCIAL_AGENT_SUPABASE_ANON_KEY");
 
   const parsed = new URL(url);
-  if (parsed.protocol !== "https:" || !parsed.hostname.endsWith(".supabase.co")) {
+  const hostname = parsed.hostname.replace(/^\[|\]$/g, "");
+  const isCloud = parsed.protocol === "https:" && hostname.endsWith(".supabase.co");
+  const isDisposableCi = env.CI === "true"
+    && parsed.protocol === "http:"
+    && new Set(["127.0.0.1", "localhost", "::1"]).has(hostname);
+  if (!isCloud && !isDisposableCi) {
     throw new Error("SOCIAL_AGENT_SUPABASE_URL must be an HTTPS Supabase Cloud URL");
   }
 

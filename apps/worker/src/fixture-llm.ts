@@ -17,7 +17,7 @@ function userValue(input: string): RecordValue {
 }
 
 function factFrom(input: RecordValue): { id: string; statement: string } {
-  const facts = Array.isArray(input.facts) ? input.facts : [];
+  const facts = Array.isArray(input.facts) ? input.facts : Array.isArray(input.verifiedFacts) ? input.verifiedFacts : [];
   const first = recordValue(facts[0]);
   return {
     id: typeof first.id === "string" ? first.id : FALLBACK_FACT_ID,
@@ -91,7 +91,7 @@ export function createFixtureLlm(): StructuredLlm {
   return {
     async generateJson(input) {
       const parsedInput = userValue(input.user);
-      const payload = input.schemaName === "TopicModelOutput"
+      const payload = (input.schemaName === "TopicGeneration" || input.schemaName === "TopicModelOutput")
         ? topicPayload(parsedInput)
         : input.schemaName === "ContentDraft"
           ? contentPayload(parsedInput)

@@ -103,14 +103,8 @@ function envValue(value) {
 }
 
 function outputPathFromArgs(args) {
-  const index = args.indexOf("--output");
-  if (index === -1) return resolve(repositoryRoot, ".env.test.local");
-  const value = args[index + 1];
-  if (!value || value.startsWith("--")) throw new Error("ENV_OUTPUT_REQUIRED");
-  const outputPath = resolve(repositoryRoot, value);
-  const rootPrefix = `${repositoryRoot}/`;
-  if (outputPath !== repositoryRoot && !outputPath.startsWith(rootPrefix)) throw new Error("ENV_OUTPUT_OUTSIDE_REPOSITORY");
-  return outputPath;
+  if (args.length > 0) throw new Error("ENV_OUTPUT_FIXED");
+  return resolve(repositoryRoot, ".env.test.local");
 }
 
 async function readLocalStatus() {
@@ -162,7 +156,7 @@ function buildValues(status) {
 }
 
 function printHelp() {
-  console.log("Usage: node scripts/write-local-supabase-env.mjs [--output .env.test.local]");
+  console.log("Usage: node scripts/write-local-supabase-env.mjs");
   console.log("Reads local Supabase status without printing credentials and writes a mode-600 env file.");
 }
 

@@ -5,11 +5,13 @@ import { createClient } from "@supabase/supabase-js";
 import { expect, test, type Page } from "@playwright/test";
 import {
   E2E_ROOT,
+  assertE2eEnvironment,
   loadE2eEnvironment,
   requiredE2eEnvironment,
 } from "./env";
 
 loadE2eEnvironment();
+assertE2eEnvironment();
 
 const BASE_URL = process.env.E2E_BASE_URL?.trim() || "http://127.0.0.1:3000";
 const WORKSPACE_ID = process.env.INTERNAL_WORKSPACE_ID || "00000000-0000-4000-8000-000000000001";
@@ -166,7 +168,9 @@ async function publisherStatus(page: Page, publicationId: string, token: string,
 }
 
 test.describe("Stage 1 internal dogfood fixture", () => {
-  test("runs the evidence-gated content and human-publish journey", async ({ page }) => {
+  test("runs the evidence-gated content and human-publish journey", async ({ page, request }) => {
+    const anonymousResponse = await request.get(new URL("/api/campaigns", BASE_URL).toString());
+    expect(anonymousResponse.status()).toBe(401);
     const suffix = Date.now().toString(36);
     await page.goto("/app");
     await expect(page).toHaveURL(/\/app$/u);

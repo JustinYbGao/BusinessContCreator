@@ -58,8 +58,11 @@ jobs:
 
       - name: Unit tests
         run: |
+          set -a
+          source .env.test.local
+          set +a
           pnpm --filter '!@social-agent/db' test
-          pnpm --dir packages/db exec vitest run --maxWorkers=1 --exclude src/tenant-integrity.test.ts
+          pnpm --dir packages/db test
 
       - name: Build web application
         run: pnpm build

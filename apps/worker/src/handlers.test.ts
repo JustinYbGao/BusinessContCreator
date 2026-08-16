@@ -182,6 +182,52 @@ describe("Task 9 job handlers", () => {
     });
   });
 
+  it("keeps render metadata inside the generated commit payload", async () => {
+    const brandProfile = { mark: "fixture", background: "#FFFFFF", foreground: "#111111", accent: "#FF2442" };
+    const generated = {
+      draft: {
+        pages: Array.from({ length: 7 }, (_, index) => ({
+          page: index + 1,
+          purpose: "fixture",
+          headline: `page-${index + 1}`,
+          body: "fixture body",
+          sourceAssetId: null,
+        })),
+      },
+      model: "fixture-model",
+      repairAttempts: 0,
+      promptVersion: "content-v1",
+      contentSha256: "b".repeat(64),
+    };
+    const handler = createContentHandler({
+      llm: {} as StructuredLlm,
+      async loadInput() {
+        return { brandProfile } as never;
+      },
+      async generate() {
+        return generated as never;
+      },
+    });
+
+    const execution = await handler({
+      ctx,
+      job: workerJob("generate_content", { contentInput: { product_id: productId, campaign_id: "campaign-1" } }),
+      workerId: "worker-test",
+      signal,
+    });
+
+    expect(execution.commitPayload).toEqual({
+      contentInput: { product_id: productId, campaign_id: "campaign-1" },
+      generated: {
+        ...generated,
+        renderInput: {
+          pages: generated.draft.pages,
+          brand: brandProfile,
+        },
+      },
+    });
+  });
+
   it("accepts the durable queue payload shape used by the web enqueue API", async () => {
     const generated = {
       draft: { titleCandidates: [], recommendedTitle: "title", body: "body" },
@@ -271,9 +317,11 @@ describe("Task 9 job handlers", () => {
     });
 
     expect(execution.commitPayload).toMatchObject({
-      renderInput: {
-        pages,
-        brand: { mark: "Fixture", background: "#fffaf0", foreground: "#17211b", accent: "#e5ecdf" },
+      generated: {
+        renderInput: {
+          pages,
+          brand: { mark: "Fixture", background: "#fffaf0", foreground: "#17211b", accent: "#e5ecdf" },
+        },
       },
     });
   });

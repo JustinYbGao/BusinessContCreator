@@ -25,4 +25,17 @@ describe("integration environment", () => {
       SOCIAL_AGENT_SUPABASE_ANON_KEY: "anon-key",
     })).toThrow("must be an HTTPS Supabase Cloud URL");
   });
+
+  it("accepts loopback credentials only for the disposable CI database", () => {
+    expect(requireIntegrationEnvironment({
+      CI: "true",
+      SOCIAL_AGENT_SUPABASE_URL: "http://127.0.0.1:54321",
+      SOCIAL_AGENT_SUPABASE_SERVICE_ROLE_KEY: "service-key",
+      SOCIAL_AGENT_SUPABASE_ANON_KEY: "anon-key",
+    })).toEqual({
+      url: "http://127.0.0.1:54321",
+      serviceRoleKey: "service-key",
+      anonKey: "anon-key",
+    });
+  });
 });

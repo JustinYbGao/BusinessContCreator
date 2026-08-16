@@ -3,8 +3,10 @@ import { dirname } from "node:path";
 import { chromium } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 import type { FullConfig } from "@playwright/test";
+import { assertTestAuthFixtureEnabled } from "../src/lib/test-auth-fixture";
 import {
   E2E_STORAGE_STATE,
+  assertE2eEnvironment,
   loadE2eEnvironment,
   requiredE2eEnvironment,
   testEmail,
@@ -12,9 +14,8 @@ import {
 
 export default async function globalSetup(config: FullConfig): Promise<void> {
   loadE2eEnvironment();
-  if (process.env.NODE_ENV !== "test" || process.env.ALLOW_TEST_AUTH_FIXTURE !== "1") {
-    throw new Error("E2E_AUTH_FIXTURE_DISABLED");
-  }
+  assertE2eEnvironment();
+  assertTestAuthFixtureEnabled(process.env);
 
   const baseURL = String(config.projects[0]?.use.baseURL ?? process.env.E2E_BASE_URL ?? "http://127.0.0.1:3000");
   const email = testEmail();

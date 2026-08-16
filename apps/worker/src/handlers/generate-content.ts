@@ -71,7 +71,10 @@ export function createContentHandler(dependencies: ContentHandlerDependencies): 
         repairAttempts: generated.repairAttempts,
         contentSha256: generated.contentSha256,
       },
-      commitPayload: { contentInput, generated, ...(renderInput ? { renderInput } : {}) },
+      commitPayload: {
+        contentInput,
+        generated: renderInput ? { ...generated, renderInput } : generated,
+      },
     };
   };
 }

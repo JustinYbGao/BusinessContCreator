@@ -3,11 +3,13 @@ import { defineConfig, devices } from "@playwright/test";
 import {
   E2E_ROOT,
   E2E_STORAGE_STATE,
+  assertE2eEnvironment,
   loadE2eEnvironment,
   testEmail,
 } from "./e2e/env";
 
 loadE2eEnvironment();
+assertE2eEnvironment();
 
 const baseURL = process.env.E2E_BASE_URL?.trim() || "http://127.0.0.1:3000";
 const base = new URL(baseURL);
