@@ -1,7 +1,7 @@
 # Task 11 Analytics, Publication Registration, and Retrospectives Design
 
-**Date:** 2026-08-16  
-**Status:** Proposed for review  
+**Date:** 2026-08-16
+**Status:** Proposed for review
 **Base:** Task 10 commit `9f52fc4` on `codex/task-11-analytics`
 
 ## Goal
@@ -338,4 +338,3 @@ follow-up rollback requires an explicit reviewed migration.
 2. Confirm `publishedAt` is operator-entered and not inferred from URL metadata.
 3. Confirm the 15-second Cloud integration test timeout is a command/CI
    setting rather than a production behavior change.
-
