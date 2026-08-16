@@ -1,0 +1,94 @@
+import { SupabasePublicationRepository } from "@social-agent/db";
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import {
+  errorResponse,
+  parseUuid,
+  requestId,
+} from "../../../../../lib/analytics-route";
+import {
+  createSupabaseServiceRoleClient,
+  requireServerInternalAdmin,
+} from "../../../../../lib/supabase/server";
+
+const PublishInputSchema = z.object({
+  publicUrl: z.string().trim().url().max(2_000),
+  publishedAt: z.string().datetime({ offset: true }),
+}).strict();
+
+const KNOWN_CODES = [
+  "AUTH_REQUIRED",
+  "ADMIN_REQUIRED",
+  "REQUEST_ID_INVALID",
+  "INVALID_PUBLICATION_ID",
+  "INVALID_PUBLICATION_INPUT",
+  "PUBLICATION_NOT_FOUND",
+  "PUBLICATION_URL_INVALID",
+  "PUBLISHED_AT_REQUIRED",
+  "ACTOR_REQUIRED",
+  "REQUEST_ID_REQUIRED",
+  "PUBLISHER_DEVICE_ACTOR_NOT_ALLOWED",
+  "PUBLICATION_REGISTRATION_CONFLICT",
+  "PUBLICATION_STATE_INVALID",
+  "PUBLICATION_DEVICE_CLAIMED",
+];
+
+type RouteContext = { params: Promise<{ publicationId: string }> };
+
+function statusOf(code: string): number {
+  if (code === "AUTH_REQUIRED") return 401;
+  if (code === "ADMIN_REQUIRED") return 403;
+  if (code === "INVALID_PUBLICATION_ID" || code === "INVALID_PUBLICATION_INPUT" || code === "REQUEST_ID_INVALID") return 400;
+  if (code === "PUBLICATION_NOT_FOUND") return 404;
+  if (code === "PUBLICATION_URL_INVALID" || code === "PUBLISHED_AT_REQUIRED" || code === "ACTOR_REQUIRED" || code === "REQUEST_ID_REQUIRED") return 400;
+  if (code === "PUBLICATION_REGISTRATION_CONFLICT" || code === "PUBLICATION_STATE_INVALID" || code === "PUBLICATION_DEVICE_CLAIMED" || code === "PUBLISHER_DEVICE_ACTOR_NOT_ALLOWED") return 409;
+  return 500;
+}
+
+function allowedPublicUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:"
+      && (url.hostname === "www.xiaohongshu.com" || url.hostname === "xhslink.com")
+      && !url.username
+      && !url.password
+      && !url.port;
+  } catch {
+    return false;
+  }
+}
+
+export async function POST(request: Request, context: RouteContext) {
+  try {
+    const identity = await requireServerInternalAdmin();
+    const { publicationId: rawPublicationId } = await context.params;
+    const publicationId = parseUuid(rawPublicationId, "INVALID_PUBLICATION_ID");
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      throw new Error("INVALID_PUBLICATION_INPUT");
+    }
+    const parsed = PublishInputSchema.safeParse(body);
+    if (!parsed.success || !allowedPublicUrl(parsed.data?.publicUrl ?? "")) {
+      throw new Error(parsed.success ? "PUBLICATION_URL_INVALID" : "INVALID_PUBLICATION_INPUT");
+    }
+    const supabase = createSupabaseServiceRoleClient();
+    const publication = await new SupabasePublicationRepository(supabase).registerPublished({
+      workspaceId: identity.workspaceId,
+      actor: { type: "user", id: identity.userId },
+      requestId: requestId(request),
+    }, publicationId, {
+      publicUrl: parsed.data.publicUrl,
+      publishedAt: parsed.data.publishedAt,
+    });
+    return NextResponse.json({
+      publicationId: publication.id,
+      status: publication.status,
+      publicUrl: publication.publicUrl,
+      publishedAt: publication.publishedAt,
+    }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    return errorResponse(error, statusOf, KNOWN_CODES);
+  }
+}
