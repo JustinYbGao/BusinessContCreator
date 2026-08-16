@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { parseMetricSnapshot, metricWindowDue } from "../../../lib/analytics-route";
-import { summarizeConversions, type MetricWindow } from "@social-agent/analytics";
+import { buildRollingMedian, summarizeConversions, type MetricWindow } from "@social-agent/analytics";
 import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../../lib/supabase/server";
 
 const WINDOWS: MetricWindow[] = ["24h", "72h", "7d"];
@@ -27,28 +27,35 @@ function statusText(status: string): string {
 export default async function AnalyticsPage() {
   const identity = await requireServerInternalAdmin();
   const supabase = createSupabaseServiceRoleClient();
-  const [productsResult, campaignsResult, publicationsResult] = await Promise.all([
+  const [productsResult, campaignsResult, publicationsResult, reportsResult, importsResult, learningsResult] = await Promise.all([
     supabase.from("products").select("id,name").eq("workspace_id", identity.workspaceId).is("deleted_at", null).order("created_at"),
     supabase.from("campaigns").select("id,name,product_id,starts_on,ends_on").eq("workspace_id", identity.workspaceId).order("created_at", { ascending: false }),
     supabase.from("publications").select("id,product_id,campaign_id,status,public_url,published_at,created_at").eq("workspace_id", identity.workspaceId).in("status", ["PUBLISHED", "MEASURING", "RETROSPECTED"]).order("created_at", { ascending: false }),
+    supabase.from("weekly_reports").select("id,product_id,campaign_id,week_start,payload,source_snapshot_ids,created_at").eq("workspace_id", identity.workspaceId).order("week_start", { ascending: false }),
+    supabase.from("metric_imports").select("id,product_id,format,accepted_rows,created_at").eq("workspace_id", identity.workspaceId).order("created_at", { ascending: false }),
+    supabase.from("learnings").select("id,product_id,publication_id,evidence_window,created_at").eq("workspace_id", identity.workspaceId).order("created_at", { ascending: false }),
   ]);
-  if (productsResult.error || campaignsResult.error || publicationsResult.error) throw new Error("ANALYTICS_UNAVAILABLE");
 
-  const publications = publicationsResult.data ?? [];
+  const products = productsResult.error ? [] : productsResult.data ?? [];
+  const campaigns = campaignsResult.error ? [] : campaignsResult.data ?? [];
+  const publications = publicationsResult.error ? [] : publicationsResult.data ?? [];
+  const reports = reportsResult.error ? [] : reportsResult.data ?? [];
+  const imports = importsResult.error ? [] : importsResult.data ?? [];
+  const learnings = learningsResult.error ? [] : learningsResult.data ?? [];
   const publicationIds = publications.map((publication) => publication.id);
   const snapshotsResult = publicationIds.length === 0
     ? { data: [], error: null }
     : await supabase.from("metric_snapshots").select("id,publication_id,window,metrics,product_conversion,captured_at").in("publication_id", publicationIds).order("captured_at");
-  if (snapshotsResult.error) throw new Error("ANALYTICS_UNAVAILABLE");
-  const snapshots = (snapshotsResult.data ?? []).map(parseMetricSnapshot);
+  const snapshotRows = snapshotsResult.error ? [] : snapshotsResult.data ?? [];
   const snapshotsByPublication = new Map<string, ReturnType<typeof parseMetricSnapshot>[]>();
-  for (const snapshot of snapshots) {
-    const existing = snapshotsByPublication.get(snapshot.id) ?? [];
+  for (const row of snapshotRows) {
+    const snapshot = parseMetricSnapshot(row);
+    const publicationId = (row as { publication_id?: unknown }).publication_id;
+    if (typeof publicationId !== "string") throw new Error("ANALYTICS_UNAVAILABLE");
+    const existing = snapshotsByPublication.get(publicationId) ?? [];
     existing.push(snapshot);
-    snapshotsByPublication.set(snapshot.id, existing);
+    snapshotsByPublication.set(publicationId, existing);
   }
-  const products = productsResult.data ?? [];
-  const campaigns = campaignsResult.data ?? [];
   const productNames = new Map(products.map((product) => [product.id, product.name]));
 
   const campaignCards = campaigns.map((campaign) => {
@@ -66,12 +73,35 @@ export default async function AnalyticsPage() {
         conversions.inferred += totals.inferred;
       }
     }
+    const samples = campaignPublications
+      .filter((publication) => publication.published_at && ["PUBLISHED", "MEASURING", "RETROSPECTED"].includes(publication.status))
+      .map((publication) => ({
+        publicationId: publication.id,
+        productId: publication.product_id,
+        campaignId: publication.campaign_id,
+        status: publication.status as "PUBLISHED" | "MEASURING" | "RETROSPECTED",
+        publishedAt: publication.published_at as string,
+        snapshots: snapshotsByPublication.get(publication.id) ?? [],
+      }));
+    const medians = WINDOWS.map((window) => buildRollingMedian({
+      currentPublicationId: "00000000-0000-0000-0000-000000000000",
+      window,
+      samples,
+    }));
+    const latestReport = reports.find((report) => report.campaign_id === campaign.id) ?? null;
+    const latestImport = imports.find((entry) => entry.product_id === campaign.product_id) ?? null;
+    const publicationIds = new Set(campaignPublications.map((publication) => publication.id));
+    const eligibleLearningIds = learnings.filter((learning) => publicationIds.has(learning.publication_id)).map((learning) => learning.id);
     return {
       ...campaign,
       productName: productNames.get(campaign.product_id) ?? "Product",
       publications: campaignPublications,
       missingWindows,
       conversions,
+      medians,
+      latestReport,
+      latestImport,
+      eligibleLearningIds,
     };
   });
 
@@ -104,6 +134,7 @@ export default async function AnalyticsPage() {
               <div style={{ color: "#536057", fontSize: 14, textAlign: "right" }}>
                 <p style={{ margin: 0 }}><strong>{campaign.publications.length}</strong> 篇已发布</p>
                 <p style={{ margin: "8px 0 0" }}><strong>{campaign.missingWindows}</strong> 个到期窗口待补</p>
+                <p style={{ margin: "8px 0 0" }}>{campaign.latestReport ? `周报 ${campaign.latestReport.week_start}` : "暂无报告"}</p>
               </div>
             </div>
 
@@ -111,6 +142,18 @@ export default async function AnalyticsPage() {
               <span style={{ background: "#e5ecdf", borderRadius: 999, color: "#315d38", fontSize: 13, padding: "7px 10px" }}>direct: {campaign.conversions.direct}</span>
               <span style={{ background: "#f4ead4", borderRadius: 999, color: "#536057", fontSize: 13, padding: "7px 10px" }}>self-reported: {campaign.conversions.selfReported}</span>
               <span style={{ background: "#eef0ea", borderRadius: 999, color: "#536057", fontSize: 13, padding: "7px 10px" }}>inferred: {campaign.conversions.inferred}</span>
+            </div>
+
+            <div style={{ borderTop: "1px solid #e6ece3", display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", marginTop: 20, paddingTop: 18 }}>
+              {campaign.medians.map((median) => <div key={median.window} style={{ background: "#f6f7f2", borderRadius: 12, padding: 12 }}>
+                <p style={{ color: "#5b705d", fontSize: 12, fontWeight: 700, margin: 0 }}>{median.window} median</p>
+                <p style={{ fontSize: 20, fontWeight: 800, margin: "8px 0 4px" }}>{median.medians.impressions ?? "—"}</p>
+                <p style={{ color: "#7b887d", fontSize: 12, margin: 0 }}>{median.sampleCount} 个可比样本</p>
+              </div>)}
+            </div>
+            <div style={{ color: "#536057", display: "grid", gap: 8, fontSize: 14, marginTop: 18 }}>
+              <p style={{ margin: 0 }}><strong>最近导入：</strong>{campaign.latestImport ? `${campaign.latestImport.format} · ${campaign.latestImport.accepted_rows} 行 · ${formatTime(campaign.latestImport.created_at)}` : "暂无指标导入"}</p>
+              <p style={{ margin: 0 }}><strong>Eligible Learning：</strong>{campaign.eligibleLearningIds.length > 0 ? campaign.eligibleLearningIds.join("、") : "暂无"}</p>
             </div>
 
             {campaign.publications.length > 0 ? <div style={{ borderTop: "1px solid #e6ece3", display: "grid", gap: 10, marginTop: 22, paddingTop: 18 }}>

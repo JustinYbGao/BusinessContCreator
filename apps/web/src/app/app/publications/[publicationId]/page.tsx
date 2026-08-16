@@ -122,7 +122,7 @@ export default async function PublicationAnalyticsPage({ params }: PageProps) {
 
       <section style={{ background: "#e5ecdf", borderRadius: 22, marginTop: 20, padding: 24 }}>
         <h2 style={{ fontSize: 24, margin: "0 0 8px" }}>最终发布仍由人工完成</h2>
-        <p style={{ color: "#536057", lineHeight: 1.6, margin: "0 0 18px" }}>此处只记录发布结果，不打开小红书页面，不保存 Cookie，也不提供自动点击最终发布按钮。</p>
+        <p style={{ color: "#536057", lineHeight: 1.6, margin: "0 0 18px" }}>最终发布仍由人工完成；此处只记录发布结果。不打开小红书页面，不保存 Cookie，也不提供自动点击最终发布按钮。</p>
         {publication.status === "AWAITING_HUMAN_PUBLISH" ? (
           <form action={`/api/publications/${publicationId}/publish`} method="post" style={{ display: "grid", gap: 12, maxWidth: 720 }}>
             <label style={{ color: "#315d38", display: "grid", fontSize: 14, fontWeight: 700, gap: 6 }}>
