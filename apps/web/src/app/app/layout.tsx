@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 const navigation = [
   ["工作台", "/app"],
   ["产品", "/app/products"],
-  ["选题", "/app/topics"],
+  ["选题", "/app/campaigns"],
   ["审核", "/app/review"],
   ["发布", "/app/publications"],
   ["复盘", "/app/analytics"],

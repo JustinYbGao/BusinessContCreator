@@ -6,6 +6,8 @@ import {
 } from "@social-agent/content-engine";
 import type { WorkerHandler } from "../runner.js";
 
+const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+
 export type ContentInputLoader = (input: {
   workspaceId: string;
   productId: string;
@@ -22,6 +24,23 @@ function recordPayload(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {};
+}
+
+function brandValue(value: unknown, fallback: string): string {
+  return typeof value === "string" && HEX_COLOR.test(value) ? value : fallback;
+}
+
+function renderInputFor(input: ContentGenerationInput, generated: ContentGenerationResult) {
+  const brandProfile = recordPayload(input.brandProfile);
+  return {
+    pages: generated.draft.pages,
+    brand: {
+      mark: typeof brandProfile.mark === "string" && brandProfile.mark.trim() ? brandProfile.mark : "SocialMediaAgent",
+      background: brandValue(brandProfile.background, "#fffaf0"),
+      foreground: brandValue(brandProfile.foreground, "#17211b"),
+      accent: brandValue(brandProfile.accent, "#e5ecdf"),
+    },
+  };
 }
 
 export function createContentHandler(dependencies: ContentHandlerDependencies): WorkerHandler {
@@ -41,6 +60,9 @@ export function createContentHandler(dependencies: ContentHandlerDependencies): 
     });
     const generated = await (dependencies.generate ?? generateContent)(input, dependencies.llm);
     if (signal.aborted) throw new Error("LEASE_LOST");
+    const renderInput = Array.isArray(generated.draft.pages) && generated.draft.pages.length === 7 && input.brandProfile
+      ? renderInputFor(input, generated)
+      : undefined;
     return {
       result: {
         productId: job.productId,
@@ -49,7 +71,7 @@ export function createContentHandler(dependencies: ContentHandlerDependencies): 
         repairAttempts: generated.repairAttempts,
         contentSha256: generated.contentSha256,
       },
-      commitPayload: { contentInput, generated },
+      commitPayload: { contentInput, generated, ...(renderInput ? { renderInput } : {}) },
     };
   };
 }

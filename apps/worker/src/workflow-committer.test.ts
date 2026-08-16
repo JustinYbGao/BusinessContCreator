@@ -140,8 +140,22 @@ describe("Supabase workflow committer", () => {
       topicId: "00000000-0000-4000-8000-000000000006",
       briefId: "00000000-0000-4000-8000-000000000007",
     });
+    const renderInput = {
+      pages: Array.from({ length: 7 }, (_, index) => ({
+        pageNumber: index + 1,
+        title: `page-${index + 1}`,
+        body: "fixture",
+      })),
+      brand: {
+        mark: "fixture",
+        background: "#FFFFFF",
+        foreground: "#111111",
+        accent: "#FF2442",
+      },
+    };
     const generated = {
       draft: { recommendedTitle: "title" },
+      renderInput,
       model: "fixture-model",
       promptVersion: "content-v1",
       contentSha256: "a".repeat(64),
@@ -163,7 +177,7 @@ describe("Supabase workflow committer", () => {
           content_id: "00000000-0000-4000-8000-000000000004",
           topic_id: "00000000-0000-4000-8000-000000000006",
           brief_id: "00000000-0000-4000-8000-000000000007",
-          payload: generated.draft,
+          payload: { ...generated.draft, renderInput },
           model_name: "fixture-model",
           prompt_version: "content-v1",
           content_sha256: "a".repeat(64),

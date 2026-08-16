@@ -82,6 +82,25 @@ export default async function CampaignTopicsPage({ params }: PageProps) {
         <p style={{ color: "#536057", lineHeight: 1.6, marginBottom: 0 }}>{JSON.stringify(campaign.pillar_quotas)}</p>
       </section>
 
+      <form action="/api/topics/select" method="post" style={{ background: "#fff", border: "1px solid #dbe4d8", borderRadius: 22, marginTop: 28, padding: 24 }}>
+        <input name="campaignId" type="hidden" value={campaignId} />
+        <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "space-between" }}>
+          <div>
+            <p style={{ color: "#5b705d", fontSize: 13, fontWeight: 700, margin: 0 }}>人工选题确认</p>
+            <p style={{ color: "#536057", lineHeight: 1.6, margin: "8px 0 0" }}>选择恰好 3 个候选，作为本周内容生产入口。</p>
+          </div>
+          <button type="submit" style={{ background: "#315d38", border: 0, borderRadius: 999, color: "#fff", cursor: "pointer", fontWeight: 700, padding: "11px 18px" }}>保存本周 3 个选题</button>
+        </div>
+        <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", marginTop: 18 }}>
+          {topics.map((topic) => (
+            <label key={topic.id} style={{ alignItems: "start", background: topic.selected ? "#e5ecdf" : "#f6f7f2", borderRadius: 12, display: "flex", gap: 10, padding: 12 }}>
+              <input aria-label={`选择 ${topic.title}`} defaultChecked={topic.selected} name="topicId" type="checkbox" value={topic.id} />
+              <span style={{ color: "#536057", fontSize: 14, lineHeight: 1.5 }}>{topic.title}<br /><small>{topic.pillar} · {Number(topic.total_score).toFixed(3)}</small></span>
+            </label>
+          ))}
+        </div>
+      </form>
+
       <section aria-label="本周建议排期" style={{ background: "#fff", border: "1px solid #dbe4d8", borderRadius: 22, marginTop: 28, padding: 24 }}>
         <p style={{ color: "#5b705d", fontSize: 13, fontWeight: 700, margin: 0 }}>本周建议排期</p>
         {selectedTopics.length === 0 ? <p style={{ color: "#536057", lineHeight: 1.6, marginBottom: 0 }}>生成并选中候选后，这里会显示 3 个本周发布槽位。</p> : (
@@ -116,6 +135,24 @@ export default async function CampaignTopicsPage({ params }: PageProps) {
             </div>
           </article>
         ))}
+      </section>
+
+      <section aria-label="生成内容" style={{ background: "#e5ecdf", borderRadius: 22, marginTop: 28, padding: 24 }}>
+        <p style={{ color: "#5b705d", fontSize: 13, fontWeight: 700, margin: 0 }}>内容生产入口</p>
+        <p style={{ color: "#536057", lineHeight: 1.6 }}>只有已经选中的 Topic 才能创建 Content；创建后由 Worker 继续生成版本。</p>
+        {selectedTopics.length === 0 ? <p style={{ color: "#536057", marginBottom: 0 }}>保存本周选题后，这里会出现内容创建入口。</p> : (
+          <div style={{ display: "grid", gap: 10 }}>
+            {selectedTopics.map((topic) => (
+              <form action="/api/contents" key={topic.id} method="post" style={{ alignItems: "center", background: "#fff", borderRadius: 12, display: "flex", flexWrap: "wrap", gap: 12, justifyContent: "space-between", padding: 14 }}>
+                <input name="campaignId" type="hidden" value={campaignId} />
+                <input name="topicId" type="hidden" value={topic.id} />
+                <input name="idempotencyKey" type="hidden" value={`content:${campaignId}:${topic.id}`} />
+                <span style={{ color: "#17211b", fontWeight: 700 }}>{topic.title}</span>
+                <button type="submit" style={{ background: "#f4ead4", border: 0, borderRadius: 999, color: "#536057", cursor: "pointer", fontWeight: 700, padding: "9px 14px" }}>创建 Content</button>
+              </form>
+            ))}
+          </div>
+        )}
       </section>
     </main>
   );

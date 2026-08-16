@@ -35,6 +35,7 @@ import { createPurgeProductHandler } from "./handlers/purge-product.js";
 import { createRenderAssetsHandler } from "./handlers/render-assets.js";
 import { createReviewHandler } from "./handlers/review-content.js";
 import { createSyncProductHandler } from "./handlers/sync-product.js";
+import { createFixtureLlm } from "./fixture-llm.js";
 import { createReadinessState, startHealthServer, type ReadinessState } from "./health.js";
 import { createWorkerId, WorkerRunner, type WorkerLogger } from "./runner.js";
 import { createSupabaseWorkflowCommitter } from "./workflow-committer.js";
@@ -43,6 +44,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 const STORAGE_BUCKET = "social-agent-assets";
 
 export type WorkerEnvironment = {
+  mode: "production" | "fixture";
   supabaseUrl: string;
   serviceRoleKey: string;
   workspaceId: string;
@@ -66,6 +68,9 @@ function portValue(value: string | undefined): number {
 }
 
 export function parseWorkerEnvironment(env: NodeJS.ProcessEnv = process.env): WorkerEnvironment {
+  const modeValue = env.SOCIAL_AGENT_WORKER_MODE?.trim() || "production";
+  if (modeValue !== "production" && modeValue !== "fixture") throw new Error("WORKER_CONFIG_INVALID");
+  const mode = modeValue as WorkerEnvironment["mode"];
   const supabaseUrl = required(env, "SOCIAL_AGENT_SUPABASE_URL");
   try {
     const parsed = new URL(supabaseUrl);
@@ -82,11 +87,14 @@ export function parseWorkerEnvironment(env: NodeJS.ProcessEnv = process.env): Wo
     serviceRoleKey: required(env, "SOCIAL_AGENT_SUPABASE_SERVICE_ROLE_KEY"),
     workspaceId,
     dormChefSourceDir: required(env, "DORMCHEF_SOURCE_DIR"),
-    llm: {
-      LLM_BASE_URL: required(env, "LLM_BASE_URL"),
-      LLM_API_KEY: required(env, "LLM_API_KEY"),
-      LLM_MODEL: required(env, "LLM_MODEL"),
-    },
+    mode,
+    llm: mode === "fixture"
+      ? { LLM_BASE_URL: "fixture://local", LLM_API_KEY: "fixture", LLM_MODEL: "fixture-model" }
+      : {
+          LLM_BASE_URL: required(env, "LLM_BASE_URL"),
+          LLM_API_KEY: required(env, "LLM_API_KEY"),
+          LLM_MODEL: required(env, "LLM_MODEL"),
+        },
     healthPort: portValue(env.WORKER_HEALTH_PORT),
     workerId: env.WORKER_ID?.trim() || undefined,
   };
@@ -503,7 +511,7 @@ export function createWorkerApplication(environment: WorkerEnvironment): WorkerA
   const learnings = new SupabaseLearningRepository(db);
   const storage = createStoragePort(db);
   const sourceAssetResolver = createSourceAssetResolver(db);
-  const llm = new OpenAiCompatibleClient(environment.llm);
+  const llm = environment.mode === "fixture" ? createFixtureLlm() : new OpenAiCompatibleClient(environment.llm);
   const sourceAssets = new Map<string, PreparedSourceAsset>();
   const adapter = new DormChefLocalAdapter(environment.dormChefSourceDir, {
     assetSink: async ({ relativeLocator, sanitized }) => {
@@ -575,13 +583,23 @@ function commandLineHealthPort(argv: string[]): number | undefined {
   return portValue(argv[index + 1]);
 }
 
+function commandLineMode(argv: string[]): WorkerEnvironment["mode"] | undefined {
+  const index = argv.indexOf("--mode");
+  if (index < 0) return undefined;
+  const value = argv[index + 1];
+  if (value !== "production" && value !== "fixture") throw new Error("WORKER_CONFIG_INVALID");
+  return value;
+}
+
 export async function runWorker(
   env: NodeJS.ProcessEnv = process.env,
   argv: string[] = process.argv.slice(2),
 ): Promise<void> {
   const environment = parseWorkerEnvironment(env);
+  const mode = commandLineMode(argv) ?? environment.mode;
   const application = createWorkerApplication({
     ...environment,
+    mode,
     healthPort: commandLineHealthPort(argv) ?? environment.healthPort,
   });
   application.readiness.configParsed = true;

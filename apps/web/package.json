@@ -6,7 +6,8 @@
     "build": "next build --webpack",
     "start": "next start",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@social-agent/analytics": "workspace:*",
@@ -24,6 +25,7 @@
     "zod": "^4.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "1.55.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0"
   }

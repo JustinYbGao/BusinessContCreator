@@ -91,6 +91,9 @@ async function runFixture(): Promise<void> {
       imagePaths: Array.from({ length: 7 }, () => imagePath),
       screenshotPath,
     });
+    if (await session.page.count(["[data-test=publish-click-count]"]) !== 0) {
+      throw new Error("FINAL_PUBLISH_CLICK_DETECTED");
+    }
     process.stdout.write(`${result.status}\n`);
   } finally {
     await session.close();

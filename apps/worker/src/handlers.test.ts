@@ -222,6 +222,62 @@ describe("Task 9 job handlers", () => {
     }]);
   });
 
+  it("attaches a bounded render input to generated content commits", async () => {
+    const pages = Array.from({ length: 7 }, (_, index) => ({
+      page: index + 1,
+      purpose: "fixture",
+      headline: `page ${index + 1}`,
+      body: "fixture body",
+      sourceAssetId: null,
+    }));
+    const generated = {
+      draft: {
+        titleCandidates: ["one", "two", "three", "four", "five"],
+        recommendedTitle: "one",
+        body: "fixture body",
+        hashtags: ["#one", "#two", "#three"],
+        interactionPrompt: "fixture prompt",
+        pages,
+        claims: [{ factId: productId, text: "fixture fact" }],
+      },
+      model: "fixture-model",
+      repairAttempts: 0,
+      promptVersion: "content-v1",
+      contentSha256: "a".repeat(64),
+    };
+    const handler = createContentHandler({
+      llm: {} as StructuredLlm,
+      async loadInput() {
+        return {
+          topic: { id: "topic-1", title: "Fixture topic", angle: "Fixture angle", pillar: "product_proof" },
+          campaign: { id: "campaign-1", goal: "fixture", audience: "fixture" },
+          facts: [{ id: productId, statement: "fixture fact", category: "feature", status: "verified", publicUseAllowed: true }],
+          assets: [],
+          learnings: [],
+          brandProfile: { mark: "Fixture", background: "#fffaf0", foreground: "#17211b", accent: "#e5ecdf" },
+          desiredCta: "fixture prompt",
+        } as never;
+      },
+      async generate() {
+        return generated as never;
+      },
+    });
+
+    const execution = await handler({
+      ctx,
+      job: workerJob("generate_content", { contentInput: { contentId: "content-1", campaignId: "campaign-1", topicId: "topic-1", briefId: "brief-1" } }),
+      workerId: "worker-test",
+      signal,
+    });
+
+    expect(execution.commitPayload).toMatchObject({
+      renderInput: {
+        pages,
+        brand: { mark: "Fixture", background: "#fffaf0", foreground: "#17211b", accent: "#e5ecdf" },
+      },
+    });
+  });
+
   it("preserves the exact review context for the atomic review commit", async () => {
     const reviewContext = {
       contentVersionId: "00000000-0000-4000-8000-000000000006",

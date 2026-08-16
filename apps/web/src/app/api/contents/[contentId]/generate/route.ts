@@ -4,6 +4,7 @@ import { ContentDraftSchema, type ContentDraft } from "@social-agent/contracts/c
 import { WorkflowJobSummarySchema } from "@social-agent/contracts/product";
 import { sha256 } from "@social-agent/content-engine/hash";
 import { HttpError } from "../../../../../lib/auth";
+import { preserveRenderInput } from "../../../../../lib/content-payload";
 import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../../../../lib/supabase/server";
 import { parseContentEditForm, parseContentEditRequest, parseGenerateContentRequest, scopeContentGenerationIdempotencyKey } from "../../../../../lib/api-inputs";
 
@@ -118,7 +119,7 @@ async function editContent(
   if (!current) throw new Error("CONTENT_VERSION_REQUIRED");
   const currentPayload = ContentDraftSchema.safeParse(current.payload);
   if (!currentPayload.success) throw new Error("CONTENT_VERSION_INVALID");
-  const payload = ContentDraftSchema.parse(input.payload);
+  const payload = preserveRenderInput(current.payload, ContentDraftSchema.parse(input.payload));
   await validateDraftScope(supabase, identity.workspaceId, content.product_id, payload);
   const requestId = input.idempotencyKey || request.headers.get("idempotency-key")?.trim() || request.headers.get("x-request-id")?.trim() || randomUUID();
   const { data: priorAudit, error: priorAuditError } = await supabase.from("audit_events")

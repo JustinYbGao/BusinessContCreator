@@ -101,6 +101,19 @@ export function parseGenerateTopicsRequest(input: unknown) {
   return parsed.data;
 }
 
+const TopicSelectionRequestSchema = z.object({
+  campaignId: z.string().uuid(),
+  topicIds: z.array(z.string().uuid()).length(3),
+}).strict();
+
+export function parseTopicSelectionRequest(input: unknown) {
+  const parsed = TopicSelectionRequestSchema.safeParse(input);
+  if (!parsed.success || new Set(parsed.data.topicIds).size !== parsed.data.topicIds.length) {
+    throw new Error("INVALID_TOPIC_SELECTION_INPUT");
+  }
+  return parsed.data;
+}
+
 export function scopeTopicGenerationIdempotencyKey(campaignId: string, idempotencyKey: string): string {
   return `generate_topics:${campaignId}:${idempotencyKey}`;
 }

@@ -11,6 +11,7 @@ import {
   parseProductSourceRequest,
   parseReviewContentRequest,
   parseSyncRequest,
+  parseTopicSelectionRequest,
   scopeContentGenerationIdempotencyKey,
   scopeTopicGenerationIdempotencyKey,
 } from "../../lib/api-inputs";
@@ -104,6 +105,16 @@ describe("Task 4 CRUD request boundaries", () => {
       .toThrow("INVALID_TOPIC_GENERATION_INPUT");
     expect(() => parseGenerateTopicsRequest({ campaignId: "not-a-uuid" }))
       .toThrow("INVALID_TOPIC_GENERATION_INPUT");
+  });
+
+  it("requires exactly three UUID topic IDs for weekly selection", () => {
+    const topicIds = [productIds.productId, productIds.channelId, "00000000-0000-4000-8000-000000000003"];
+    expect(parseTopicSelectionRequest({ campaignId: productIds.productId, topicIds })).toEqual({
+      campaignId: productIds.productId,
+      topicIds,
+    });
+    expect(() => parseTopicSelectionRequest({ campaignId: productIds.productId, topicIds: topicIds.slice(0, 2) }))
+      .toThrow("INVALID_TOPIC_SELECTION_INPUT");
   });
 
   it("scopes topic generation idempotency keys to the campaign", () => {

@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      INTERNAL_WORKSPACE_ID: 00000000-0000-4000-8000-000000000001
+      ADMIN_EMAIL_ALLOWLIST: stage1-e2e@example.com
+      E2E_TEST_EMAIL: stage1-e2e@example.com
+      ALLOW_TEST_AUTH_FIXTURE: "1"
+      CI: "true"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify Node.js version
+        run: test "$(node --version)" = "v$(tr -d '\n' < .nvmrc)"
+
+      - name: Start disposable Supabase
+        run: >-
+          pnpm exec supabase start
+          > "$RUNNER_TEMP/social-agent-supabase-start.log" 2>&1
+
+      - name: Reset disposable Supabase schema
+        run: >-
+          pnpm exec supabase db reset
+          > "$RUNNER_TEMP/social-agent-supabase-reset.log" 2>&1
+
+      - name: Write fixture environment
+        run: node scripts/write-local-supabase-env.mjs
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Unit tests
+        run: |
+          pnpm --filter '!@social-agent/db' test
+          pnpm --dir packages/db exec vitest run --maxWorkers=1 --exclude src/tenant-integrity.test.ts
+
+      - name: Build web application
+        run: pnpm build
+
+      - name: Install Playwright browser
+        run: pnpm --dir apps/web exec playwright install --with-deps chromium
+
+      - name: Run Stage 1 fixture journey
+        env:
+          NODE_ENV: test
+        run: pnpm --dir apps/web exec playwright test
+
+      - name: Stop disposable Supabase
+        if: always()
+        run: >-
+          pnpm exec supabase stop
+          > "$RUNNER_TEMP/social-agent-supabase-stop.log" 2>&1

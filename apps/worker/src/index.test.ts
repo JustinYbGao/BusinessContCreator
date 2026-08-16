@@ -19,6 +19,7 @@ function environment(): NodeJS.ProcessEnv {
 describe("worker environment", () => {
   it("parses only the SocialMediaAgent worker configuration", () => {
     expect(parseWorkerEnvironment(environment())).toEqual({
+      mode: "production",
       supabaseUrl: "https://stage1.example.invalid",
       serviceRoleKey: "service-role-fixture",
       workspaceId,
@@ -37,5 +38,18 @@ describe("worker environment", () => {
     const values = environment();
     delete values.SOCIAL_AGENT_SUPABASE_SERVICE_ROLE_KEY;
     expect(() => parseWorkerEnvironment(values)).toThrow("WORKER_CONFIG_MISSING");
+  });
+
+  it("accepts fixture mode without remote LLM credentials", () => {
+    const values = environment();
+    delete values.LLM_BASE_URL;
+    delete values.LLM_API_KEY;
+    delete values.LLM_MODEL;
+    values.SOCIAL_AGENT_WORKER_MODE = "fixture";
+
+    expect(parseWorkerEnvironment(values)).toMatchObject({
+      mode: "fixture",
+      dormChefSourceDir: "/tmp/fixture-source",
+    });
   });
 });

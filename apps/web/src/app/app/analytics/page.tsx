@@ -128,7 +128,7 @@ export default async function AnalyticsPage() {
             <div style={{ alignItems: "start", display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "space-between" }}>
               <div>
                 <p style={{ color: "#5b705d", fontSize: 13, fontWeight: 700, margin: 0 }}>{campaign.productName}</p>
-                <h2 style={{ fontSize: 28, letterSpacing: "-0.04em", margin: "8px 0" }}>{campaign.name}</h2>
+                <h2 style={{ fontSize: 28, letterSpacing: "-0.04em", margin: "8px 0" }}><Link href={`/app/campaigns/${campaign.id}`} style={{ color: "inherit", textDecoration: "none" }}>{campaign.name}</Link></h2>
                 <p style={{ color: "#7b887d", fontSize: 13, margin: 0 }}>{campaign.starts_on} → {campaign.ends_on}</p>
               </div>
               <div style={{ color: "#536057", fontSize: 14, textAlign: "right" }}>

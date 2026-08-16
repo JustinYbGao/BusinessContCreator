@@ -62,6 +62,15 @@ function contentInputForCommit(execution: JobExecution, actorId: string, product
   const generated = recordValue(payload.generated);
 
   if (input.payload === undefined && generated.draft !== undefined) input.payload = generated.draft;
+  if (generated.renderInput !== undefined) {
+    const renderInput = recordValue(generated.renderInput);
+    if (Object.keys(renderInput).length > 0) {
+      input.payload = {
+        ...recordValue(input.payload),
+        renderInput,
+      };
+    }
+  }
   if (input.prompt_version === undefined && generated.promptVersion !== undefined) {
     input.prompt_version = generated.promptVersion;
   }
