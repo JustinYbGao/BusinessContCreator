@@ -427,4 +427,41 @@ describe("createServerAuthAdminPort", () => {
       { page: 2, perPage: 1000 },
     ]);
   });
+
+  it("returns null after the first short auth admin page without a match", async () => {
+    const calls: Array<{ page?: number; perPage?: number }> = [];
+    const authAdmin = createServerAuthAdminPort({
+      auth: {
+        admin: {
+          async listUsers(params?: { page?: number; perPage?: number }) {
+            calls.push(params ?? {});
+            const page = params?.page ?? 1;
+            return {
+              data: {
+                users: page <= 100
+                  ? Array.from({ length: 1000 }, (_, index) => ({
+                      id: `page-${page}-user-${index + 1}`,
+                      email: `page-${page}-user-${index + 1}@example.com`,
+                    }))
+                  : [{ id: "final-user", email: "final@example.com" }],
+              },
+            };
+          },
+          async createUser() {
+            throw new Error("not used");
+          },
+          async updateUserById() {
+            throw new Error("not used");
+          },
+          async deleteUser() {
+            throw new Error("not used");
+          },
+        },
+      },
+    } as never);
+
+    await expect(authAdmin.findUserByEmail("missing@example.com")).resolves.toBeNull();
+    expect(calls).toHaveLength(101);
+    expect(calls.at(-1)).toEqual({ page: 101, perPage: 1000 });
+  });
 });

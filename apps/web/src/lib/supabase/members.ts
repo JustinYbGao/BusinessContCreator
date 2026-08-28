@@ -47,7 +47,6 @@ export function createServerMemberService(actor: InternalMemberIdentity): Member
 }
 
 const AUTH_ADMIN_LIST_USERS_PER_PAGE = 1000;
-const AUTH_ADMIN_LIST_USERS_MAX_PAGES = 100;
 
 function createServerMemberStore(supabase = createSupabaseServiceRoleClient()): MemberStore {
   return {
@@ -156,7 +155,8 @@ export function createServerAuthAdminPort(supabase = createSupabaseServiceRoleCl
 
   return {
     async findUserByEmail(email) {
-      for (let page = 1; page <= AUTH_ADMIN_LIST_USERS_MAX_PAGES; page += 1) {
+      let page = 1;
+      while (true) {
         const { data, error } = await adminApi.listUsers({
           page,
           perPage: AUTH_ADMIN_LIST_USERS_PER_PAGE,
@@ -170,9 +170,8 @@ export function createServerAuthAdminPort(supabase = createSupabaseServiceRoleCl
         }
 
         if (users.length < AUTH_ADMIN_LIST_USERS_PER_PAGE) return null;
+        page += 1;
       }
-
-      return null;
     },
 
     async createUser(input) {
