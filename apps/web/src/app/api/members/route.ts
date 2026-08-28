@@ -59,20 +59,16 @@ function parseCreateRequest(input: unknown) {
   const parsed = MemberCreateRequestSchema.safeParse(input);
   if (!parsed.success) throw new Error("INVALID_MEMBER_CREATE_INPUT");
 
-  const payload = {
-    email: parsed.data.email,
-    displayName: parsed.data.displayName,
-    role: parsed.data.role,
-    password: parsed.data.temporaryPassword,
-  };
-
   try {
-    parseMemberCreateInput(payload);
+    return parseMemberCreateInput({
+      email: parsed.data.email,
+      displayName: parsed.data.displayName,
+      role: parsed.data.role,
+      password: parsed.data.temporaryPassword,
+    });
   } catch {
     throw new Error("INVALID_MEMBER_CREATE_INPUT");
   }
-
-  return payload;
 }
 
 export async function handleMembersGet(

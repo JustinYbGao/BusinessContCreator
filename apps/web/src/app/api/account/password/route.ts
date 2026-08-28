@@ -1,14 +1,18 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { HttpError, type InternalMemberIdentity } from "../../../../lib/auth";
+import type { MemberStore } from "../../../../lib/members";
 import { parseMemberPasswordResetInput } from "../../../../lib/member-inputs";
-import { createSupabaseServiceRoleClient } from "../../../../lib/supabase/server";
+import { createServerMemberStore } from "../../../../lib/supabase/members";
 import { createSupabaseServerClient, requireServerInternalAdmin } from "../../../../lib/supabase/server";
+
+type PasswordChangeStore = Pick<MemberStore, "markPasswordChanged">;
 
 interface AccountPasswordRouteDependencies {
   requireIdentity?: () => Promise<InternalMemberIdentity>;
   updateAuthenticatedPassword?: (identity: InternalMemberIdentity, password: string) => Promise<void>;
   clearMustChangePassword?: (identity: InternalMemberIdentity) => Promise<void>;
+  createMemberStore?: () => PasswordChangeStore;
 }
 
 const AccountPasswordRequestSchema = z.object({
@@ -55,14 +59,11 @@ async function updateAuthenticatedPassword(
   if (error) throw new Error("ACCOUNT_PASSWORD_UPDATE_FAILED");
 }
 
-async function clearMustChangePassword(identity: InternalMemberIdentity) {
-  const supabase = createSupabaseServiceRoleClient();
-  const { error } = await supabase
-    .from("workspace_members")
-    .update({ must_change_password: false })
-    .eq("workspace_id", identity.workspaceId)
-    .eq("user_id", identity.userId);
-  if (error) throw new Error("ACCOUNT_PASSWORD_UPDATE_FAILED");
+async function clearMustChangePassword(
+  identity: InternalMemberIdentity,
+  createMemberStore: () => PasswordChangeStore = createServerMemberStore,
+) {
+  await createMemberStore().markPasswordChanged(identity.workspaceId, identity.userId, false);
 }
 
 export async function handleAccountPasswordPost(
@@ -79,7 +80,15 @@ export async function handleAccountPasswordPost(
     }
     const password = parsePasswordRequest(body);
     await (deps.updateAuthenticatedPassword ?? updateAuthenticatedPassword)(identity, password);
-    await (deps.clearMustChangePassword ?? clearMustChangePassword)(identity);
+    if (deps.clearMustChangePassword) {
+      await deps.clearMustChangePassword(identity);
+    } else {
+      try {
+        await clearMustChangePassword(identity, deps.createMemberStore ?? createServerMemberStore);
+      } catch {
+        throw new Error("ACCOUNT_PASSWORD_UPDATE_FAILED");
+      }
+    }
     return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const code = codeOf(error) === "INTERNAL_ERROR" ? "ACCOUNT_PASSWORD_UPDATE_FAILED" : codeOf(error);

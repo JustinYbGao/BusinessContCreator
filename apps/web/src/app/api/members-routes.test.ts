@@ -112,8 +112,8 @@ describe("Task 4 member route boundaries", () => {
     });
 
     expect(service.createMember).toHaveBeenCalledWith({
-      email: " NewMember@example.com ",
-      displayName: "  New Member ",
+      email: "newmember@example.com",
+      displayName: "New Member",
       role: "member",
       password: "temporary-pass",
     });

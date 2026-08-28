@@ -48,7 +48,7 @@ export function createServerMemberService(actor: InternalMemberIdentity): Member
 
 const AUTH_ADMIN_LIST_USERS_PER_PAGE = 1000;
 
-function createServerMemberStore(supabase = createSupabaseServiceRoleClient()): MemberStore {
+export function createServerMemberStore(supabase = createSupabaseServiceRoleClient()): MemberStore {
   return {
     async list(workspaceId) {
       const { data, error } = await supabase

@@ -21,6 +21,8 @@ describe("Task 4 account route boundaries", () => {
   const requireIdentity = vi.fn();
   const updateAuthenticatedPassword = vi.fn();
   const clearMustChangePassword = vi.fn();
+  const markPasswordChanged = vi.fn();
+  const createMemberStore = vi.fn();
 
   beforeEach(() => {
     requireIdentity.mockReset();
@@ -29,6 +31,21 @@ describe("Task 4 account route boundaries", () => {
     updateAuthenticatedPassword.mockResolvedValue(undefined);
     clearMustChangePassword.mockReset();
     clearMustChangePassword.mockResolvedValue(undefined);
+    markPasswordChanged.mockReset();
+    markPasswordChanged.mockResolvedValue({
+      id: "00000000-0000-4000-8000-000000000201",
+      workspaceId: identity.workspaceId,
+      userId: identity.userId,
+      email: identity.email,
+      displayName: null,
+      role: identity.role,
+      status: identity.status,
+      mustChangePassword: false,
+      createdBy: null,
+      revokedAt: null,
+    });
+    createMemberStore.mockReset();
+    createMemberStore.mockReturnValue({ markPasswordChanged });
   });
 
   it("returns the current member identity with no-store caching", async () => {
@@ -52,7 +69,7 @@ describe("Task 4 account route boundaries", () => {
     });
   });
 
-  it("changes only the authenticated user password and clears the current membership flag", async () => {
+  it("changes only the authenticated user password and clears the current membership flag through the member store", async () => {
     const { password } = await loadRoutes();
 
     const response = await password.handleAccountPasswordPost(new Request("http://localhost/api/account/password", {
@@ -65,11 +82,13 @@ describe("Task 4 account route boundaries", () => {
     }), {
       requireIdentity,
       updateAuthenticatedPassword,
-      clearMustChangePassword,
+      createMemberStore,
     });
 
     expect(updateAuthenticatedPassword).toHaveBeenCalledWith(identity, "updated-password");
-    expect(clearMustChangePassword).toHaveBeenCalledWith(identity);
+    expect(createMemberStore).toHaveBeenCalledTimes(1);
+    expect(markPasswordChanged).toHaveBeenCalledWith(identity.workspaceId, identity.userId, false);
+    expect(updateAuthenticatedPassword.mock.invocationCallOrder[0]).toBeLessThan(markPasswordChanged.mock.invocationCallOrder[0]);
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body).toEqual({ ok: true });
@@ -113,10 +132,10 @@ describe("Task 4 account route boundaries", () => {
     expect(clearMustChangePassword).not.toHaveBeenCalled();
   });
 
-  it("masks authenticated password update failures and member-flag clear failures", async () => {
+  it("masks authenticated password update failures and fails closed when the store-backed flag clear updates no membership row", async () => {
     const { password } = await loadRoutes();
     updateAuthenticatedPassword.mockRejectedValueOnce(new Error("provider secret"));
-    clearMustChangePassword.mockRejectedValueOnce(new Error("database details"));
+    markPasswordChanged.mockRejectedValueOnce(new Error("MEMBER_PASSWORD_RESET_FAILED"));
 
     const authFailure = await password.handleAccountPasswordPost(new Request("http://localhost/api/account/password", {
       method: "POST",
@@ -143,8 +162,11 @@ describe("Task 4 account route boundaries", () => {
     }), {
       requireIdentity,
       updateAuthenticatedPassword,
-      clearMustChangePassword,
+      createMemberStore,
     });
+    expect(updateAuthenticatedPassword).toHaveBeenCalledTimes(2);
+    expect(markPasswordChanged).toHaveBeenCalledTimes(1);
+    expect(updateAuthenticatedPassword.mock.invocationCallOrder[1]).toBeLessThan(markPasswordChanged.mock.invocationCallOrder[0]);
     expect(memberFailure.status).toBe(502);
     expect(await memberFailure.json()).toEqual({ ok: false, error: "ACCOUNT_PASSWORD_UPDATE_FAILED" });
   });
