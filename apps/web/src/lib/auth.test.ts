@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   type AuthEnvironment,
   type AuthPort,
+  type InternalMemberIdentity,
+  type MemberLookupPort,
   type WorkspaceLookupPort,
   requireInternalAdmin,
+  requireInternalMember,
+  requireInternalMemberAdmin,
 } from "./auth.js";
 
 const workspaceId = "00000000-0000-4000-8000-000000000001";
@@ -21,6 +25,12 @@ function fakeAuth(email: string | null): AuthPort {
 
 function workspaceLookup(exists = true): WorkspaceLookupPort {
   return { exists: async () => exists };
+}
+
+function memberLookup(identity: InternalMemberIdentity | null): MemberLookupPort {
+  return {
+    getByUserId: async () => identity,
+  };
 }
 
 describe("requireInternalAdmin", () => {
@@ -91,5 +101,136 @@ describe("requireInternalAdmin", () => {
     expect(identity).toEqual({ userId: "user-1", email: "owner@example.com", workspaceId });
     expect(identity.email).not.toBe(requestJson.email);
     expect(identity.workspaceId).not.toBe(requestJson.workspaceId);
+  });
+});
+
+describe("requireInternalMember", () => {
+  it("returns the matching active member row", async () => {
+    await expect(
+      requireInternalMember(
+        fakeAuth("member@example.com"),
+        workspaceLookup(),
+        memberLookup({
+          userId: "user-1",
+          email: "member@example.com",
+          workspaceId,
+          role: "member",
+          status: "active",
+          mustChangePassword: true,
+        }),
+        env,
+      ),
+    ).resolves.toEqual({
+      userId: "user-1",
+      email: "member@example.com",
+      workspaceId,
+      role: "member",
+      status: "active",
+      mustChangePassword: true,
+    });
+  });
+
+  it("rejects a revoked member row with 403", async () => {
+    await expect(
+      requireInternalMember(
+        fakeAuth("owner@example.com"),
+        workspaceLookup(),
+        memberLookup({
+          userId: "user-1",
+          email: "owner@example.com",
+          workspaceId,
+          role: "owner",
+          status: "revoked",
+          mustChangePassword: false,
+        }),
+        env,
+      ),
+    ).rejects.toMatchObject({ status: 403, code: "MEMBER_REVOKED" });
+  });
+
+  it("rejects an authenticated user without a member row unless they are allowlisted", async () => {
+    await expect(
+      requireInternalMember(fakeAuth("other@example.com"), workspaceLookup(), memberLookup(null), env),
+    ).rejects.toMatchObject({ status: 403, code: "MEMBER_REQUIRED" });
+  });
+
+  it("returns a bootstrap owner identity for an allowlisted user without a member row", async () => {
+    await expect(
+      requireInternalMember(
+        fakeAuth(" OWNER@EXAMPLE.COM "),
+        workspaceLookup(),
+        memberLookup(null),
+        env,
+      ),
+    ).resolves.toEqual({
+      userId: "user-1",
+      email: "owner@example.com",
+      workspaceId,
+      role: "owner",
+      status: "active",
+      mustChangePassword: false,
+    });
+  });
+
+  it("fails closed when the member lookup is unavailable", async () => {
+    const unavailableMembers: MemberLookupPort = {
+      getByUserId: async () => {
+        throw new Error("members unavailable");
+      },
+    };
+
+    await expect(
+      requireInternalMember(
+        fakeAuth("owner@example.com"),
+        workspaceLookup(),
+        unavailableMembers,
+        env,
+      ),
+    ).rejects.toMatchObject({ status: 500, code: "MEMBERS_UNAVAILABLE" });
+  });
+});
+
+describe("requireInternalMemberAdmin", () => {
+  it("rejects a plain member but allows admin and bootstrap owner identities", async () => {
+    await expect(
+      requireInternalMemberAdmin(
+        fakeAuth("member@example.com"),
+        workspaceLookup(),
+        memberLookup({
+          userId: "user-1",
+          email: "member@example.com",
+          workspaceId,
+          role: "member",
+          status: "active",
+          mustChangePassword: false,
+        }),
+        env,
+      ),
+    ).rejects.toMatchObject({ status: 403, code: "ADMIN_REQUIRED" });
+
+    await expect(
+      requireInternalMemberAdmin(
+        fakeAuth("admin@example.com"),
+        workspaceLookup(),
+        memberLookup({
+          userId: "user-1",
+          email: "admin@example.com",
+          workspaceId,
+          role: "admin",
+          status: "active",
+          mustChangePassword: false,
+        }),
+        env,
+      ),
+    ).resolves.toMatchObject({ role: "admin" });
+
+    await expect(
+      requireInternalMemberAdmin(
+        fakeAuth("owner@example.com"),
+        workspaceLookup(),
+        memberLookup(null),
+        env,
+      ),
+    ).resolves.toMatchObject({ role: "owner", email: "owner@example.com" });
   });
 });

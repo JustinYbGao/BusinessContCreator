@@ -2,7 +2,8 @@ import { createServerClient } from "@supabase/ssr";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import {
-  requireInternalAdmin,
+  requireInternalMember,
+  requireInternalMemberAdmin,
   type AuthPort,
   type WorkspaceLookupPort,
 } from "../auth";
@@ -72,8 +73,21 @@ export function createWorkspaceLookupPort(): WorkspaceLookupPort {
 }
 
 export async function requireServerInternalAdmin() {
-  return requireInternalAdmin(
+  const { createServerMemberLookupPort } = await import("./members");
+
+  return requireInternalMember(
     await createServerAuthPort(),
     createWorkspaceLookupPort(),
+    createServerMemberLookupPort(),
+  );
+}
+
+export async function requireServerMemberAdmin() {
+  const { createServerMemberLookupPort } = await import("./members");
+
+  return requireInternalMemberAdmin(
+    await createServerAuthPort(),
+    createWorkspaceLookupPort(),
+    createServerMemberLookupPort(),
   );
 }
