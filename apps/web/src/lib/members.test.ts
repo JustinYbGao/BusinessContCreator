@@ -34,6 +34,7 @@ function createMemberRecord(overrides: Partial<MemberRecord> = {}): MemberRecord
     role: "member",
     status: "active",
     mustChangePassword: true,
+    createdAt: "2026-08-28T12:00:00.000Z",
     createdBy: "actor-1",
     revokedAt: null,
     ...overrides,
@@ -42,7 +43,7 @@ function createMemberRecord(overrides: Partial<MemberRecord> = {}): MemberRecord
 
 class FakeMemberStore implements MemberStore {
   readonly rows = new Map<string, MemberRecord>();
-  inserted: Array<Omit<MemberRecord, "id">> = [];
+  inserted: Array<Omit<MemberRecord, "id" | "createdAt">> = [];
   updatedRoles: Array<{ userId: string; role: MemberRecord["role"] }> = [];
   updatedStatuses: Array<{ userId: string; status: MemberRecord["status"] }> = [];
   passwordFlags: Array<{ userId: string; mustChangePassword: boolean }> = [];
@@ -68,10 +69,10 @@ class FakeMemberStore implements MemberStore {
     return null;
   }
 
-  async insert(input: Omit<MemberRecord, "id">): Promise<MemberRecord> {
+  async insert(input: Omit<MemberRecord, "id" | "createdAt">): Promise<MemberRecord> {
     this.inserted.push(input);
     if (this.failInsert) throw new Error("duplicate key value violates unique constraint");
-    const row = { ...input, id: `member-row-${this.rows.size + 1}` };
+    const row = { ...input, id: `member-row-${this.rows.size + 1}`, createdAt: "2026-08-28T12:00:00.000Z" };
     this.rows.set(row.userId, row);
     return row;
   }
@@ -360,7 +361,7 @@ describe("MemberService", () => {
       payload: { mustChangePassword: true },
     });
     expect(JSON.stringify(audit.events[0])).not.toContain("reset-password");
-    expect("password" in audit.events[0].payload).toBe(false);
+    expect("password" in audit.events[0]!.payload).toBe(false);
   });
 
   it("emits only safe audit metadata for role and status changes", async () => {

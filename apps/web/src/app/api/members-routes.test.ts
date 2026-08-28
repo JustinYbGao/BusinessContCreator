@@ -27,6 +27,7 @@ function createMember(overrides: Partial<MemberRecord> = {}): MemberRecord {
     role: "member",
     status: "active",
     mustChangePassword: true,
+    createdAt: "2026-08-28T12:00:00.000Z",
     createdBy: "00000000-0000-4000-8000-000000000099",
     revokedAt: null,
     ...overrides,
@@ -88,6 +89,7 @@ describe("Task 4 member route boundaries", () => {
         role: "member",
         status: "active",
         mustChangePassword: true,
+        createdAt: "2026-08-28T12:00:00.000Z",
         revokedAt: null,
       }],
     });
@@ -129,6 +131,7 @@ describe("Task 4 member route boundaries", () => {
         role: "member",
         status: "active",
         mustChangePassword: true,
+        createdAt: "2026-08-28T12:00:00.000Z",
         revokedAt: null,
       },
     });
@@ -219,6 +222,7 @@ describe("Task 4 member route boundaries", () => {
         role: "admin",
         status: "active",
         mustChangePassword: true,
+        createdAt: "2026-08-28T12:00:00.000Z",
         revokedAt: null,
       },
     });
@@ -243,6 +247,7 @@ describe("Task 4 member route boundaries", () => {
         role: "member",
         status: "revoked",
         mustChangePassword: true,
+        createdAt: "2026-08-28T12:00:00.000Z",
         revokedAt: "2026-08-28T12:00:00.000Z",
       },
     });
@@ -327,6 +332,7 @@ describe("Task 4 member route boundaries", () => {
         role: "member",
         status: "active",
         mustChangePassword: true,
+        createdAt: "2026-08-28T12:00:00.000Z",
         revokedAt: null,
       },
     });

@@ -50,6 +50,7 @@ function serializeMember(member: MemberRecord) {
     role: member.role,
     status: member.status,
     mustChangePassword: member.mustChangePassword,
+    createdAt: member.createdAt,
     revokedAt: member.revokedAt,
   };
 }

@@ -11,10 +11,13 @@ interface WorkspaceMemberRow {
   role: InternalMemberIdentity["role"];
   status: InternalMemberIdentity["status"];
   must_change_password: boolean;
+  created_at: string;
   display_name: string | null;
   created_by: string | null;
   revoked_at: string | null;
 }
+
+const WORKSPACE_MEMBER_COLUMNS = "id,workspace_id,user_id,email,display_name,role,status,must_change_password,created_at,created_by,revoked_at";
 
 export function createServerMemberLookupPort(): MemberLookupPort {
   const store = createServerMemberStore();
@@ -53,7 +56,7 @@ export function createServerMemberStore(supabase = createSupabaseServiceRoleClie
     async list(workspaceId) {
       const { data, error } = await supabase
         .from("workspace_members")
-        .select("id,workspace_id,user_id,email,display_name,role,status,must_change_password,created_by,revoked_at")
+        .select(WORKSPACE_MEMBER_COLUMNS)
         .eq("workspace_id", workspaceId)
         .order("created_at", { ascending: true });
 
@@ -66,7 +69,7 @@ export function createServerMemberStore(supabase = createSupabaseServiceRoleClie
 
       let query = supabase
         .from("workspace_members")
-        .select("id,workspace_id,user_id,email,display_name,role,status,must_change_password,created_by,revoked_at")
+        .select(WORKSPACE_MEMBER_COLUMNS)
         .eq("workspace_id", workspaceId);
 
       if (lookup.userId) query = query.eq("user_id", lookup.userId);
@@ -91,7 +94,7 @@ export function createServerMemberStore(supabase = createSupabaseServiceRoleClie
           created_by: input.createdBy,
           revoked_at: input.revokedAt,
         })
-        .select("id,workspace_id,user_id,email,display_name,role,status,must_change_password,created_by,revoked_at")
+        .select(WORKSPACE_MEMBER_COLUMNS)
         .single();
 
       if (error) throw new MemberServiceError("MEMBER_CREATE_FAILED");
@@ -104,7 +107,7 @@ export function createServerMemberStore(supabase = createSupabaseServiceRoleClie
         .update({ role })
         .eq("workspace_id", workspaceId)
         .eq("user_id", userId)
-        .select("id,workspace_id,user_id,email,display_name,role,status,must_change_password,created_by,revoked_at")
+        .select(WORKSPACE_MEMBER_COLUMNS)
         .single();
 
       if (error) throw new MemberServiceError("MEMBER_ROLE_CHANGE_FAILED");
@@ -117,7 +120,7 @@ export function createServerMemberStore(supabase = createSupabaseServiceRoleClie
         .update({ status, revoked_at: status === "revoked" ? new Date().toISOString() : null })
         .eq("workspace_id", workspaceId)
         .eq("user_id", userId)
-        .select("id,workspace_id,user_id,email,display_name,role,status,must_change_password,created_by,revoked_at")
+        .select(WORKSPACE_MEMBER_COLUMNS)
         .single();
 
       if (error) throw new MemberServiceError("MEMBER_STATUS_CHANGE_FAILED");
@@ -130,7 +133,7 @@ export function createServerMemberStore(supabase = createSupabaseServiceRoleClie
         .update({ must_change_password: mustChangePassword })
         .eq("workspace_id", workspaceId)
         .eq("user_id", userId)
-        .select("id,workspace_id,user_id,email,display_name,role,status,must_change_password,created_by,revoked_at")
+        .select(WORKSPACE_MEMBER_COLUMNS)
         .single();
 
       if (error) throw new MemberServiceError("MEMBER_PASSWORD_RESET_FAILED");
@@ -228,6 +231,7 @@ function mapWorkspaceMember(row: WorkspaceMemberRow): MemberRecord {
     role: row.role,
     status: row.status,
     mustChangePassword: row.must_change_password,
+    createdAt: row.created_at,
     createdBy: row.created_by,
     revokedAt: row.revoked_at,
   };

@@ -21,14 +21,17 @@ export interface MemberRecord {
   role: InternalMemberRole;
   status: InternalMemberStatus;
   mustChangePassword: boolean;
+  createdAt: string;
   createdBy: string | null;
   revokedAt: string | null;
 }
 
+type MemberInsertInput = Omit<MemberRecord, "id" | "createdAt">;
+
 export interface MemberStore {
   list(workspaceId: string): Promise<MemberRecord[]>;
   find(workspaceId: string, lookup: { userId?: string; email?: string }): Promise<MemberRecord | null>;
-  insert(input: Omit<MemberRecord, "id">): Promise<MemberRecord>;
+  insert(input: MemberInsertInput): Promise<MemberRecord>;
   updateRole(workspaceId: string, userId: string, role: ManagedMemberRole): Promise<MemberRecord>;
   updateStatus(workspaceId: string, userId: string, status: InternalMemberStatus): Promise<MemberRecord>;
   markPasswordChanged(workspaceId: string, userId: string, mustChangePassword: boolean): Promise<MemberRecord>;
@@ -106,7 +109,7 @@ export class MemberService {
         workspaceId: this.deps.actor.workspaceId,
         userId: authUser.userId,
         email: parsed.email,
-        displayName: parsed.displayName,
+        displayName: parsed.displayName ?? null,
         role: parsed.role,
         status: "active",
         mustChangePassword: true,
