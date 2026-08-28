@@ -8,6 +8,7 @@ import type {
   MemberStore,
 } from "./members.js";
 import { MemberService } from "./members.js";
+import { createServerAuthAdminPort } from "./supabase/members.js";
 
 const workspaceId = "00000000-0000-4000-8000-000000000001";
 
@@ -150,8 +151,10 @@ class FakeAuthAdminPort implements AuthAdminPort {
 
 class FakeAuditPort implements AuditPort {
   events: MemberAuditEvent[] = [];
+  failAppend = false;
 
   async append(event: MemberAuditEvent) {
+    if (this.failAppend) throw new Error("audit unavailable");
     this.events.push(event);
   }
 }
@@ -277,6 +280,31 @@ describe("MemberService", () => {
     });
   });
 
+  it("does not delete a newly created auth user when audit append fails after membership insertion", async () => {
+    const store = new FakeMemberStore();
+    const auth = new FakeAuthAdminPort();
+    const audit = new FakeAuditPort();
+    audit.failAppend = true;
+
+    await expect(createService({
+      store,
+      auth,
+      audit,
+    }).createMember({
+      email: "member@example.com",
+      role: "member",
+      password: "temporary-pass",
+    })).rejects.toMatchObject({ code: "MEMBER_AUDIT_FAILED" });
+
+    expect(auth.deletedUsers).toEqual([]);
+    expect(store.rows.get("auth-1")).toMatchObject({
+      email: "member@example.com",
+      role: "member",
+      status: "active",
+      mustChangePassword: true,
+    });
+  });
+
   it("enforces owner and admin boundaries for creating admins, changing roles, revoking, restoring, and protecting the owner", async () => {
     const adminActor = createIdentity({ userId: "admin-1", email: "admin@example.com", role: "admin" });
     const memberActor = createIdentity({ userId: "member-actor", email: "plain@example.com", role: "member" });
@@ -354,5 +382,49 @@ describe("MemberService", () => {
       }),
     ]);
     expect(JSON.stringify(audit.events)).not.toContain("password");
+  });
+});
+
+describe("createServerAuthAdminPort", () => {
+  it("finds a user on later auth admin pages and stops once found", async () => {
+    const pages = [
+      Array.from({ length: 1000 }, (_, index) => ({
+        id: `page-1-user-${index + 1}`,
+        email: `user${index + 1}@example.com`,
+      })),
+      [
+        { id: "target-user", email: "Target@Example.com" },
+        { id: "page-2-user-2", email: "page2@example.com" },
+      ],
+    ];
+    const calls: Array<{ page?: number; perPage?: number }> = [];
+    const authAdmin = createServerAuthAdminPort({
+      auth: {
+        admin: {
+          async listUsers(params?: { page?: number; perPage?: number }) {
+            calls.push(params ?? {});
+            return { data: { users: pages[(params?.page ?? 1) - 1] ?? [] } };
+          },
+          async createUser() {
+            throw new Error("not used");
+          },
+          async updateUserById() {
+            throw new Error("not used");
+          },
+          async deleteUser() {
+            throw new Error("not used");
+          },
+        },
+      },
+    } as never);
+
+    await expect(authAdmin.findUserByEmail("target@example.com")).resolves.toEqual({
+      userId: "target-user",
+      email: "target@example.com",
+    });
+    expect(calls).toEqual([
+      { page: 1, perPage: 1000 },
+      { page: 2, perPage: 1000 },
+    ]);
   });
 });

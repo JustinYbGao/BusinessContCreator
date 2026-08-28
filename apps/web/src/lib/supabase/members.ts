@@ -46,6 +46,9 @@ export function createServerMemberService(actor: InternalMemberIdentity): Member
   });
 }
 
+const AUTH_ADMIN_LIST_USERS_PER_PAGE = 1000;
+const AUTH_ADMIN_LIST_USERS_MAX_PAGES = 100;
+
 function createServerMemberStore(supabase = createSupabaseServiceRoleClient()): MemberStore {
   return {
     async list(workspaceId) {
@@ -137,7 +140,7 @@ function createServerMemberStore(supabase = createSupabaseServiceRoleClient()): 
   };
 }
 
-function createServerAuthAdminPort(supabase = createSupabaseServiceRoleClient()): AuthAdminPort {
+export function createServerAuthAdminPort(supabase = createSupabaseServiceRoleClient()): AuthAdminPort {
   const adminApi = supabase.auth.admin as {
     listUsers(params?: { page?: number; perPage?: number }): Promise<{
       data?: { users?: Array<{ id: string; email?: string | null }> };
@@ -153,10 +156,23 @@ function createServerAuthAdminPort(supabase = createSupabaseServiceRoleClient())
 
   return {
     async findUserByEmail(email) {
-      const { data, error } = await adminApi.listUsers({ page: 1, perPage: 200 });
-      if (error) throw new MemberServiceError("AUTH_ADMIN_UNAVAILABLE");
-      const user = data?.users?.find((candidate) => candidate.email?.toLowerCase() === email);
-      return user ? { userId: user.id, email } : null;
+      for (let page = 1; page <= AUTH_ADMIN_LIST_USERS_MAX_PAGES; page += 1) {
+        const { data, error } = await adminApi.listUsers({
+          page,
+          perPage: AUTH_ADMIN_LIST_USERS_PER_PAGE,
+        });
+        if (error) throw new MemberServiceError("AUTH_ADMIN_UNAVAILABLE");
+
+        const users = data?.users ?? [];
+        const user = users.find((candidate) => candidate.email?.toLowerCase() === email);
+        if (user?.email) {
+          return { userId: user.id, email: user.email.toLowerCase() };
+        }
+
+        if (users.length < AUTH_ADMIN_LIST_USERS_PER_PAGE) return null;
+      }
+
+      return null;
     },
 
     async createUser(input) {

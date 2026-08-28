@@ -100,8 +100,9 @@ export class MemberService {
       createdUserId = authUser.userId;
     }
 
+    let member: MemberRecord;
     try {
-      const member = await this.deps.store.insert({
+      member = await this.deps.store.insert({
         workspaceId: this.deps.actor.workspaceId,
         userId: authUser.userId,
         email: parsed.email,
@@ -112,18 +113,6 @@ export class MemberService {
         createdBy: this.deps.actor.userId,
         revokedAt: null,
       });
-
-      await this.appendAudit({
-        action: "workspace_member.created",
-        entityId: member.userId,
-        payload: {
-          role: member.role,
-          status: member.status,
-          mustChangePassword: member.mustChangePassword,
-        },
-      });
-
-      return member;
     } catch {
       if (createdUserId) {
         try {
@@ -134,6 +123,18 @@ export class MemberService {
       }
       throw new MemberServiceError("MEMBER_CREATE_FAILED");
     }
+
+    await this.appendAudit({
+      action: "workspace_member.created",
+      entityId: member.userId,
+      payload: {
+        role: member.role,
+        status: member.status,
+        mustChangePassword: member.mustChangePassword,
+      },
+    });
+
+    return member;
   }
 
   async changeRole(userId: string, input: unknown): Promise<MemberRecord> {
