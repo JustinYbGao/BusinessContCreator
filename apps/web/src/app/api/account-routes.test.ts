@@ -12,8 +12,8 @@ const identity: InternalMemberIdentity = {
 
 async function loadRoutes() {
   return {
-    me: await import("./account/me/route"),
-    password: await import("./account/password/route"),
+    me: await import("./account/me/handler"),
+    password: await import("./account/password/handler"),
   };
 }
 
@@ -88,7 +88,7 @@ describe("Task 4 account route boundaries", () => {
     expect(updateAuthenticatedPassword).toHaveBeenCalledWith(identity, "updated-password");
     expect(createMemberStore).toHaveBeenCalledTimes(1);
     expect(markPasswordChanged).toHaveBeenCalledWith(identity.workspaceId, identity.userId, false);
-    expect(updateAuthenticatedPassword.mock.invocationCallOrder[0]).toBeLessThan(markPasswordChanged.mock.invocationCallOrder[0]);
+    expect(updateAuthenticatedPassword.mock.invocationCallOrder[0]!).toBeLessThan(markPasswordChanged.mock.invocationCallOrder[0]!);
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body).toEqual({ ok: true });
@@ -166,7 +166,7 @@ describe("Task 4 account route boundaries", () => {
     });
     expect(updateAuthenticatedPassword).toHaveBeenCalledTimes(2);
     expect(markPasswordChanged).toHaveBeenCalledTimes(1);
-    expect(updateAuthenticatedPassword.mock.invocationCallOrder[1]).toBeLessThan(markPasswordChanged.mock.invocationCallOrder[0]);
+    expect(updateAuthenticatedPassword.mock.invocationCallOrder[1]!).toBeLessThan(markPasswordChanged.mock.invocationCallOrder[0]!);
     expect(memberFailure.status).toBe(502);
     expect(await memberFailure.json()).toEqual({ ok: false, error: "ACCOUNT_PASSWORD_UPDATE_FAILED" });
   });

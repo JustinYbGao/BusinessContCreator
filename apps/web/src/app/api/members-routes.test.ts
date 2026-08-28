@@ -36,9 +36,9 @@ function createMember(overrides: Partial<MemberRecord> = {}): MemberRecord {
 
 async function loadRoutes() {
   return {
-    members: await import("./members/route"),
-    member: await import("./members/[memberId]/route"),
-    memberPassword: await import("./members/[memberId]/password/route"),
+    members: await import("./members/handler"),
+    member: await import("./members/[memberId]/handler"),
+    memberPassword: await import("./members/[memberId]/password/handler"),
   };
 }
 
