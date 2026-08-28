@@ -35,6 +35,15 @@ export interface MagicLinkDependencies {
   }): Promise<MagicLinkResponse>;
 }
 
+function isInvalidCredentialsMessage(message: string | null | undefined): boolean {
+  if (!message) {
+    return false;
+  }
+
+  const normalizedMessage = message.trim().toLowerCase();
+  return normalizedMessage === "invalid login credentials" || normalizedMessage === "invalid credentials";
+}
+
 export async function submitPasswordLogin({
   email,
   password,
@@ -46,7 +55,9 @@ export async function submitPasswordLogin({
     if (error) {
       return {
         kind: "error",
-        message: "邮箱或密码错误，请重试。",
+        message: isInvalidCredentialsMessage(error.message)
+          ? "邮箱或密码错误，请重试。"
+          : "登录服务暂不可用，请稍后重试。",
       };
     }
 

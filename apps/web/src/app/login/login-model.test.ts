@@ -39,7 +39,7 @@ describe("login model", () => {
     });
   });
 
-  it("maps any password sign-in failure to the same generic inline error", async () => {
+  it("maps rate limit auth errors to the service unavailable message", async () => {
     const signInWithPassword = vi.fn().mockResolvedValue({
       error: { message: "Rate limit exceeded" },
     });
@@ -51,7 +51,23 @@ describe("login model", () => {
       fetchAccount: vi.fn(),
     })).resolves.toEqual({
       kind: "error",
-      message: "邮箱或密码错误，请重试。",
+      message: "登录服务暂不可用，请稍后重试。",
+    });
+  });
+
+  it("maps unknown password sign-in auth errors to the service unavailable message", async () => {
+    const signInWithPassword = vi.fn().mockResolvedValue({
+      error: { message: "Something unexpected happened" },
+    });
+
+    await expect(submitPasswordLogin({
+      email: "member@example.com",
+      password: "wrong-password",
+      signInWithPassword,
+      fetchAccount: vi.fn(),
+    })).resolves.toEqual({
+      kind: "error",
+      message: "登录服务暂不可用，请稍后重试。",
     });
   });
 
