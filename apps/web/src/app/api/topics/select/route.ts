@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { HttpError } from "../../../../lib/auth";
+import { HttpError } from "../../../../lib/workspace-context";
 import { parseTopicSelectionRequest } from "../../../../lib/api-inputs";
-import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../../../lib/supabase/server";
+import { createSupabaseServiceRoleClient, requireServerInternalWorkspace } from "../../../../lib/supabase/server";
 
 function errorCode(error: unknown): string {
   if (error instanceof HttpError) return error.code;
@@ -11,8 +11,6 @@ function errorCode(error: unknown): string {
 }
 
 function errorStatus(code: string): number {
-  if (code === "AUTH_REQUIRED") return 401;
-  if (code === "ADMIN_REQUIRED") return 403;
   if (code === "INVALID_TOPIC_SELECTION_INPUT") return 400;
   if (code === "CAMPAIGN_NOT_FOUND") return 404;
   if (code === "TOPIC_SCOPE_MISMATCH") return 409;
@@ -31,24 +29,24 @@ async function requestBody(request: Request): Promise<unknown> {
 
 export async function POST(request: Request) {
   try {
-    const identity = await requireServerInternalAdmin();
+    const context = await requireServerInternalWorkspace();
     const body = await requestBody(request).catch(() => { throw new Error("INVALID_TOPIC_SELECTION_INPUT"); });
     const input = parseTopicSelectionRequest(body);
     const supabase = createSupabaseServiceRoleClient();
     const { data: campaign, error: campaignError } = await supabase
       .from("campaigns")
       .select("id,product_id")
-      .eq("workspace_id", identity.workspaceId)
+      .eq("workspace_id", context.workspaceId)
       .eq("id", input.campaignId)
       .maybeSingle();
     if (campaignError || !campaign) throw new Error("CAMPAIGN_NOT_FOUND");
 
     const { error } = await supabase.rpc("select_weekly_topics", {
-      p_workspace_id: identity.workspaceId,
+      p_workspace_id: context.workspaceId,
       p_campaign_id: input.campaignId,
       p_topic_ids: input.topicIds,
       p_actor_type: "user",
-      p_actor_id: identity.userId,
+      p_actor_id: context.actorId,
       p_request_id: request.headers.get("x-request-id")?.trim() || randomUUID(),
     });
     if (error) {

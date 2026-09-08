@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { WorkflowJobSummarySchema } from "@social-agent/contracts/product";
-import { HttpError } from "../../../../lib/auth";
-import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../../../lib/supabase/server";
+import { HttpError } from "../../../../lib/workspace-context";
+import { createSupabaseServiceRoleClient, requireServerInternalWorkspace } from "../../../../lib/supabase/server";
 import { parseGenerateTopicsRequest, scopeTopicGenerationIdempotencyKey } from "../../../../lib/api-inputs";
 
 function idempotencyKeyFrom(request: Request, bodyKey?: string): string {
@@ -19,8 +19,6 @@ function codeOf(error: unknown): string {
 }
 
 function statusOf(code: string): number {
-  if (code === "AUTH_REQUIRED") return 401;
-  if (code === "ADMIN_REQUIRED") return 403;
   if (code === "INVALID_TOPIC_GENERATION_INPUT" || code === "IDEMPOTENCY_KEY_REQUIRED") return 400;
   if (code === "CAMPAIGN_NOT_FOUND") return 404;
   return 500;
@@ -40,7 +38,7 @@ async function requestBody(request: Request): Promise<unknown> {
 
 export async function POST(request: Request) {
   try {
-    const identity = await requireServerInternalAdmin();
+    const context = await requireServerInternalWorkspace();
     let body: unknown;
     try {
       body = await requestBody(request);
@@ -53,14 +51,14 @@ export async function POST(request: Request) {
     const { data: campaign, error: campaignError } = await supabase
       .from("campaigns")
       .select("id,product_id")
-      .eq("workspace_id", identity.workspaceId)
+      .eq("workspace_id", context.workspaceId)
       .eq("id", input.campaignId)
       .maybeSingle();
     if (campaignError || !campaign) throw new Error("CAMPAIGN_NOT_FOUND");
     const { data: product, error: productError } = await supabase
       .from("products")
       .select("id")
-      .eq("workspace_id", identity.workspaceId)
+      .eq("workspace_id", context.workspaceId)
       .eq("id", campaign.product_id)
       .is("deleted_at", null)
       .maybeSingle();
@@ -70,7 +68,7 @@ export async function POST(request: Request) {
     const { data: job, error: jobError } = await supabase
       .from("workflow_jobs")
       .insert({
-        workspace_id: identity.workspaceId,
+        workspace_id: context.workspaceId,
         product_id: campaign.product_id,
         kind: "generate_topics",
         idempotency_key: jobIdempotencyKey,
@@ -84,7 +82,7 @@ export async function POST(request: Request) {
       const existing = await supabase
         .from("workflow_jobs")
         .select("id,status")
-        .eq("workspace_id", identity.workspaceId)
+        .eq("workspace_id", context.workspaceId)
         .eq("product_id", campaign.product_id)
         .eq("kind", "generate_topics")
         .eq("idempotency_key", jobIdempotencyKey)
@@ -96,11 +94,11 @@ export async function POST(request: Request) {
 
     const requestId = request.headers.get("x-request-id")?.trim() || randomUUID();
     const { error: auditError } = await supabase.rpc("append_audit_event", {
-      p_workspace_id: identity.workspaceId,
+      p_workspace_id: context.workspaceId,
       p_event: {
         product_id: campaign.product_id,
         actor_type: "user",
-        actor_id: identity.userId,
+        actor_id: context.actorId,
         action: "workflow_job.enqueued",
         entity_type: "workflow_job",
         entity_id: job.id,
@@ -110,7 +108,7 @@ export async function POST(request: Request) {
     });
     if (auditError) {
       await supabase.from("workflow_jobs").delete()
-        .eq("workspace_id", identity.workspaceId)
+        .eq("workspace_id", context.workspaceId)
         .eq("product_id", campaign.product_id)
         .eq("id", job.id)
         .eq("status", "queued");

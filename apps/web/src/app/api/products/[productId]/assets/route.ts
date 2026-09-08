@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { AssetRecordSchema } from "@social-agent/contracts/product";
-import { HttpError } from "../../../../../lib/auth";
-import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../../../../lib/supabase/server";
+import { HttpError } from "../../../../../lib/workspace-context";
+import { createSupabaseServiceRoleClient, requireServerInternalWorkspace } from "../../../../../lib/supabase/server";
 import { parseAssetAction } from "../../../../../lib/api-inputs";
 type RouteContext = { params: Promise<{ productId: string }> };
 
@@ -13,8 +13,6 @@ function codeOf(error: unknown): string {
 }
 
 function statusOf(code: string): number {
-  if (code === "AUTH_REQUIRED") return 401;
-  if (code === "ADMIN_REQUIRED") return 403;
   if (code === "INVALID_ASSET_ACTION") return 400;
   if (code === "PRODUCT_NOT_FOUND" || code === "ASSET_NOT_FOUND") return 404;
   if (code === "ASSET_MUST_BE_VERIFIED") return 409;
@@ -39,15 +37,15 @@ async function readBody(request: Request): Promise<unknown> {
   }
 }
 
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET(_request: Request, routeContext: RouteContext) {
   try {
-    const identity = await requireServerInternalAdmin();
-    const { productId } = await context.params;
+    const context = await requireServerInternalWorkspace();
+    const { productId } = await routeContext.params;
     const supabase = createSupabaseServiceRoleClient();
-    await requireProduct(supabase, identity.workspaceId, productId);
+    await requireProduct(supabase, context.workspaceId, productId);
     const { data, error } = await supabase.from("assets")
       .select("id,workspace_id,product_id,kind,provenance,source_locator,verification_status,public_use_allowed,verified_by,verified_at,object_key,mime_type,byte_size,width,height,sha256,created_at")
-      .eq("workspace_id", identity.workspaceId).eq("product_id", productId).eq("provenance", "source").order("created_at");
+      .eq("workspace_id", context.workspaceId).eq("product_id", productId).eq("provenance", "source").order("created_at");
     if (error) throw new Error("ASSETS_UNAVAILABLE");
     return NextResponse.json({ assets: (data ?? []).map((row) => AssetRecordSchema.parse(row)) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
@@ -55,16 +53,16 @@ export async function GET(_request: Request, context: RouteContext) {
   }
 }
 
-export async function POST(request: Request, context: RouteContext) {
+export async function POST(request: Request, routeContext: RouteContext) {
   try {
-    const identity = await requireServerInternalAdmin();
-    const { productId } = await context.params;
+    const context = await requireServerInternalWorkspace();
+    const { productId } = await routeContext.params;
     const input = parseAssetAction(await readBody(request));
     const supabase = createSupabaseServiceRoleClient();
-    await requireProduct(supabase, identity.workspaceId, productId);
+    await requireProduct(supabase, context.workspaceId, productId);
     const { data: existing, error: existingError } = await supabase.from("assets")
       .select("id,verification_status,public_use_allowed,verified_by,verified_at")
-      .eq("workspace_id", identity.workspaceId).eq("product_id", productId).eq("id", input.assetId).eq("provenance", "source").maybeSingle();
+      .eq("workspace_id", context.workspaceId).eq("product_id", productId).eq("id", input.assetId).eq("provenance", "source").maybeSingle();
     if (existingError) throw new Error("ASSET_LOOKUP_FAILED");
     if (!existing) throw new Error("ASSET_NOT_FOUND");
     if (input.decision === "public-use" && existing.verification_status !== "verified") throw new Error("ASSET_MUST_BE_VERIFIED");
@@ -73,21 +71,21 @@ export async function POST(request: Request, context: RouteContext) {
       ? { verification_status: "blocked", public_use_allowed: false, verified_by: null, verified_at: null }
       : input.decision === "public-use"
         ? { public_use_allowed: true }
-        : { verification_status: "verified", public_use_allowed: true, verified_by: identity.userId, verified_at: new Date().toISOString() };
+        : { verification_status: "verified", public_use_allowed: true, verified_by: context.actorId, verified_at: new Date().toISOString() };
     const { data: asset, error } = await supabase.from("assets")
       .update(values)
-      .eq("workspace_id", identity.workspaceId).eq("product_id", productId).eq("id", input.assetId).eq("provenance", "source")
+      .eq("workspace_id", context.workspaceId).eq("product_id", productId).eq("id", input.assetId).eq("provenance", "source")
       .select("id,workspace_id,product_id,kind,provenance,source_locator,verification_status,public_use_allowed,verified_by,verified_at,object_key,mime_type,byte_size,width,height,sha256,created_at")
       .maybeSingle();
     if (error) throw new Error("ASSET_UPDATE_FAILED");
     if (!asset) throw new Error("ASSET_NOT_FOUND");
     const assetRecord = AssetRecordSchema.parse(asset);
     const { error: auditError } = await supabase.rpc("append_audit_event", {
-      p_workspace_id: identity.workspaceId,
+      p_workspace_id: context.workspaceId,
       p_event: {
         product_id: productId,
         actor_type: "user",
-        actor_id: identity.userId,
+        actor_id: context.actorId,
         action: `asset.${input.decision}`,
         entity_type: "asset",
         entity_id: assetRecord.id,
@@ -101,7 +99,7 @@ export async function POST(request: Request, context: RouteContext) {
         public_use_allowed: existing.public_use_allowed,
         verified_by: existing.verified_by,
         verified_at: existing.verified_at,
-      }).eq("workspace_id", identity.workspaceId).eq("product_id", productId).eq("id", asset.id)
+      }).eq("workspace_id", context.workspaceId).eq("product_id", productId).eq("id", asset.id)
         .eq("verification_status", assetRecord.verification_status).eq("public_use_allowed", assetRecord.public_use_allowed);
       throw new Error("AUDIT_WRITE_FAILED");
     }

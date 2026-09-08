@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../../../../lib/supabase/server";
+import { IconMark } from "../../../../../components/console-ui";
+import { createSupabaseServiceRoleClient, requireServerInternalWorkspace } from "../../../../../lib/supabase/server";
 
 type PageProps = { params: Promise<{ campaignId: string }> };
 type TopicRow = {
@@ -38,21 +39,21 @@ function scoreEntries(scores: Record<string, unknown>): Array<[string, unknown]>
 }
 
 export default async function CampaignTopicsPage({ params }: PageProps) {
-  const identity = await requireServerInternalAdmin();
+  const context = await requireServerInternalWorkspace();
   const { campaignId } = await params;
   const supabase = createSupabaseServiceRoleClient();
   const { data: campaign, error: campaignError } = await supabase
     .from("campaigns")
     .select("id,name,product_id,starts_on,ends_on,pillar_quotas")
-    .eq("workspace_id", identity.workspaceId)
+    .eq("workspace_id", context.workspaceId)
     .eq("id", campaignId)
     .maybeSingle();
   if (campaignError || !campaign) notFound();
 
   const [productResult, topicsResult, factsResult] = await Promise.all([
-    supabase.from("products").select("id").eq("workspace_id", identity.workspaceId).eq("id", campaign.product_id).is("deleted_at", null).maybeSingle(),
-    supabase.from("topic_candidates").select("id,title,angle,pillar,fact_ids,scores,total_score,selected").eq("workspace_id", identity.workspaceId).eq("campaign_id", campaignId).order("total_score", { ascending: false }),
-    supabase.from("product_facts").select("id,statement,category,status,public_use_allowed").eq("workspace_id", identity.workspaceId).eq("product_id", campaign.product_id).eq("status", "verified").eq("public_use_allowed", true),
+    supabase.from("products").select("id").eq("workspace_id", context.workspaceId).eq("id", campaign.product_id).is("deleted_at", null).maybeSingle(),
+    supabase.from("topic_candidates").select("id,title,angle,pillar,fact_ids,scores,total_score,selected").eq("workspace_id", context.workspaceId).eq("campaign_id", campaignId).order("total_score", { ascending: false }),
+    supabase.from("product_facts").select("id,statement,category,status,public_use_allowed").eq("workspace_id", context.workspaceId).eq("product_id", campaign.product_id).eq("status", "verified").eq("public_use_allowed", true),
   ]);
   if (productResult.error || !productResult.data || topicsResult.error || factsResult.error) notFound();
   const topics = (topicsResult.data ?? []) as TopicRow[];
@@ -63,92 +64,95 @@ export default async function CampaignTopicsPage({ params }: PageProps) {
 
   return (
     <main>
-      <p style={{ color: "#5b705d", fontSize: 13, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase" }}>Topic review</p>
-      <p style={{ margin: "12px 0 4px" }}><Link href="/app" style={{ color: "#5b705d" }}>工作台</Link> / {campaign.name}</p>
-      <div style={{ alignItems: "end", display: "flex", flexWrap: "wrap", gap: 20, justifyContent: "space-between" }}>
+      <div className="page-heading page-heading--compact">
         <div>
-          <h1 style={{ fontSize: 44, letterSpacing: "-0.05em", margin: "10px 0" }}>每周选题</h1>
-          <p style={{ color: "#536057", lineHeight: 1.6, margin: 0 }}>{campaign.starts_on} → {campaign.ends_on} · 先看证据，再决定内容方向。</p>
+          <p className="breadcrumb"><Link href={`/app/campaigns/${campaignId}`}>{campaign.name}</Link> / 选题</p>
+          <p className="eyebrow">Topic review</p>
+          <h1>每周选题</h1>
+          <p>{campaign.starts_on} → {campaign.ends_on} · 先看证据，再决定内容方向。</p>
         </div>
         <form action="/api/topics/generate" method="post">
           <input name="campaignId" type="hidden" value={campaignId} />
           <input name="idempotencyKey" type="hidden" value={idempotencyKey} />
-          <button type="submit" style={{ background: "#315d38", border: 0, borderRadius: 999, color: "#fff", cursor: "pointer", fontWeight: 700, padding: "12px 18px" }}>生成 9 个候选</button>
+          <button className="button button-primary" type="submit">生成 9 个候选 <IconMark name="arrow" size={16} /></button>
         </form>
       </div>
 
-      <section style={{ background: "#e5ecdf", borderRadius: 22, marginTop: 28, padding: 22 }}>
-        <p style={{ color: "#315d38", fontSize: 13, fontWeight: 700, margin: 0 }}>本周期配额</p>
-        <p style={{ color: "#536057", lineHeight: 1.6, marginBottom: 0 }}>{JSON.stringify(campaign.pillar_quotas)}</p>
+      <section className="policy-panel">
+        <p className="eyebrow">本周期配额</p>
+        <p>{JSON.stringify(campaign.pillar_quotas)}</p>
       </section>
 
-      <form action="/api/topics/select" method="post" style={{ background: "#fff", border: "1px solid #dbe4d8", borderRadius: 22, marginTop: 28, padding: 24 }}>
+      <form action="/api/topics/select" className="surface-card surface-card--spaced" method="post">
         <input name="campaignId" type="hidden" value={campaignId} />
-        <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "space-between" }}>
+        <div className="surface-card-header">
           <div>
-            <p style={{ color: "#5b705d", fontSize: 13, fontWeight: 700, margin: 0 }}>人工选题确认</p>
-            <p style={{ color: "#536057", lineHeight: 1.6, margin: "8px 0 0" }}>选择恰好 3 个候选，作为本周内容生产入口。</p>
+            <p className="eyebrow">人工选题确认</p>
+            <p>选择恰好 3 个候选，作为本周内容生产入口。</p>
           </div>
-          <button type="submit" style={{ background: "#315d38", border: 0, borderRadius: 999, color: "#fff", cursor: "pointer", fontWeight: 700, padding: "11px 18px" }}>保存本周 3 个选题</button>
+          <button className="button button-primary" type="submit">保存本周 3 个选题</button>
         </div>
-        <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", marginTop: 18 }}>
+        <div className="topic-select-grid">
           {topics.map((topic) => (
-            <label key={topic.id} style={{ alignItems: "start", background: topic.selected ? "#e5ecdf" : "#f6f7f2", borderRadius: 12, display: "flex", gap: 10, padding: 12 }}>
+            <label className="topic-select-option" key={topic.id}>
               <input aria-label={`选择 ${topic.title}`} defaultChecked={topic.selected} name="topicId" type="checkbox" value={topic.id} />
-              <span style={{ color: "#536057", fontSize: 14, lineHeight: 1.5 }}>{topic.title}<br /><small>{topic.pillar} · {Number(topic.total_score).toFixed(3)}</small></span>
+              <span>{topic.title}<br /><small>{topic.pillar} · {Number(topic.total_score).toFixed(3)}</small></span>
             </label>
           ))}
         </div>
       </form>
 
-      <section aria-label="本周建议排期" style={{ background: "#fff", border: "1px solid #dbe4d8", borderRadius: 22, marginTop: 28, padding: 24 }}>
-        <p style={{ color: "#5b705d", fontSize: 13, fontWeight: 700, margin: 0 }}>本周建议排期</p>
-        {selectedTopics.length === 0 ? <p style={{ color: "#536057", lineHeight: 1.6, marginBottom: 0 }}>生成并选中候选后，这里会显示 3 个本周发布槽位。</p> : (
-          <ol style={{ display: "grid", gap: 10, margin: "14px 0 0", paddingLeft: 22 }}>
-            {selectedTopics.map((topic, index) => <li key={topic.id} style={{ color: "#536057", lineHeight: 1.6 }}><strong style={{ color: "#17211b" }}>发布槽位 {index + 1} · {topic.title}</strong><br />{topic.pillar} · 评分 {Number(topic.total_score).toFixed(3)}</li>)}
+      <section aria-label="本周建议排期" className="surface-card surface-card--spaced">
+        <p className="eyebrow">本周建议排期</p>
+        {selectedTopics.length === 0 ? <p className="card-copy">生成并选中候选后，这里会显示 3 个本周发布槽位。</p> : (
+          <ol className="schedule-list">
+            {selectedTopics.map((topic, index) => <li key={topic.id}><strong>发布槽位 {index + 1} · {topic.title}</strong><br />{topic.pillar} · 评分 {Number(topic.total_score).toFixed(3)}</li>)}
           </ol>
         )}
       </section>
 
-      <section style={{ display: "grid", gap: 16, marginTop: 28 }}>
-        {topics.length === 0 ? <p style={{ background: "#fff", border: "1px solid #dbe4d8", borderRadius: 18, color: "#536057", padding: 24 }}>还没有候选选题。请生成一轮候选。</p> : topics.map((topic) => (
-          <article key={topic.id} style={{ background: "#fff", border: topic.selected ? "2px solid #315d38" : "1px solid #dbe4d8", borderRadius: 18, padding: 24 }}>
-            <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "space-between" }}>
-              <span style={{ background: "#f4ead4", borderRadius: 999, color: "#536057", fontSize: 12, fontWeight: 700, padding: "6px 10px" }}>{topic.pillar}{topic.selected ? " · 本周入选" : ""}</span>
-              <strong style={{ color: "#315d38", fontSize: 22 }}>{Number(topic.total_score).toFixed(3)}</strong>
+      <section className="surface-list">
+        {topics.length === 0 ? <div className="empty-state surface-card"><p>还没有候选选题。请生成一轮候选。</p></div> : topics.map((topic) => (
+          <article className="surface-card" data-selected={topic.selected} key={topic.id}>
+            <div className="surface-card-header">
+              <div>
+                <div className="chip-row"><span className="chip" data-tone="attention">{topic.pillar}{topic.selected ? " · 本周入选" : ""}</span></div>
+                <h2 className="topic-card-title">{topic.title}</h2>
+              </div>
+              <strong className="metric-panel-value">{Number(topic.total_score).toFixed(3)}</strong>
             </div>
-            <h2 style={{ fontSize: 24, lineHeight: 1.35, margin: "16px 0 8px" }}>{topic.title}</h2>
-            <p style={{ color: "#536057", lineHeight: 1.6, marginTop: 0 }}>{topic.angle}</p>
-            <div style={{ display: "grid", gap: 18, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+            <p className="topic-card-angle">{topic.angle}</p>
+            <div className="score-grid">
               <div>
-                <p style={{ color: "#5b705d", fontSize: 13, fontWeight: 700 }}>评分贡献</p>
-                <ul style={{ color: "#536057", lineHeight: 1.6, paddingLeft: 20 }}>{scoreEntries(topic.scores).map(([name, value]) => <li key={name}>{name}: {String(value)}</li>)}</ul>
+                <h3>评分贡献</h3>
+                <ul className="content-list">{scoreEntries(topic.scores).map(([name, value]) => <li key={name}>{name}: {String(value)}</li>)}</ul>
               </div>
               <div>
-                <p style={{ color: "#5b705d", fontSize: 13, fontWeight: 700 }}>证据 Facts</p>
-                <ul style={{ color: "#536057", lineHeight: 1.6, paddingLeft: 20 }}>{topic.fact_ids.map((factId) => <li key={factId}>{facts.get(factId)?.statement ?? `Fact ${factId}`}</li>)}</ul>
+                <h3>证据 Facts</h3>
+                <ul className="content-list">{topic.fact_ids.map((factId) => <li key={factId}>{facts.get(factId)?.statement ?? `Fact ${factId}`}</li>)}</ul>
               </div>
               <div>
-                <p style={{ color: "#5b705d", fontSize: 13, fontWeight: 700 }}>风险提示</p>
-                <p style={{ color: "#536057", lineHeight: 1.6, marginTop: 0 }}>{Array.isArray(topic.scores.risks) && topic.scores.risks.length > 0 ? topic.scores.risks.join("；") : "暂无结构化风险提示"}</p>
+                <h3>风险提示</h3>
+                <p className="card-copy">{Array.isArray(topic.scores.risks) && topic.scores.risks.length > 0 ? topic.scores.risks.join("；") : "暂无结构化风险提示"}</p>
               </div>
             </div>
           </article>
         ))}
       </section>
 
-      <section aria-label="生成内容" style={{ background: "#e5ecdf", borderRadius: 22, marginTop: 28, padding: 24 }}>
-        <p style={{ color: "#5b705d", fontSize: 13, fontWeight: 700, margin: 0 }}>内容生产入口</p>
-        <p style={{ color: "#536057", lineHeight: 1.6 }}>只有已经选中的 Topic 才能创建 Content；创建后由 Worker 继续生成版本。</p>
-        {selectedTopics.length === 0 ? <p style={{ color: "#536057", marginBottom: 0 }}>保存本周选题后，这里会出现内容创建入口。</p> : (
-          <div style={{ display: "grid", gap: 10 }}>
+      <section className="policy-panel surface-card--spaced">
+        <p className="eyebrow">内容生产入口</p>
+        <h2>从已确认的 Topic 开始</h2>
+        <p>只有已经选中的 Topic 才能创建 Content；创建后由 Worker 继续生成版本。</p>
+        {selectedTopics.length === 0 ? <p className="card-copy">保存本周选题后，这里会出现内容创建入口。</p> : (
+          <div className="surface-list">
             {selectedTopics.map((topic) => (
-              <form action="/api/contents" key={topic.id} method="post" style={{ alignItems: "center", background: "#fff", borderRadius: 12, display: "flex", flexWrap: "wrap", gap: 12, justifyContent: "space-between", padding: 14 }}>
+              <form action="/api/contents" className="data-list-row" key={topic.id} method="post">
                 <input name="campaignId" type="hidden" value={campaignId} />
                 <input name="topicId" type="hidden" value={topic.id} />
                 <input name="idempotencyKey" type="hidden" value={`content:${campaignId}:${topic.id}`} />
-                <span style={{ color: "#17211b", fontWeight: 700 }}>{topic.title}</span>
-                <button type="submit" style={{ background: "#f4ead4", border: 0, borderRadius: 999, color: "#536057", cursor: "pointer", fontWeight: 700, padding: "9px 14px" }}>创建 Content</button>
+                <strong>{topic.title}</strong>
+                <button className="button button-quiet button-small" type="submit">创建 Content <IconMark name="arrow" size={14} /></button>
               </form>
             ))}
           </div>

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { PublicationPackageSchema, PublisherClaimResponseSchema, type PublicationPackage } from "@social-agent/contracts";
 import { SupabasePublicationRepository } from "@social-agent/db";
-import { HttpError } from "../../../../../lib/auth";
+import { HttpError } from "../../../../../lib/workspace-context";
 import { requirePublisherDevice } from "../../../../../lib/publisher-auth";
 import { createSupabaseServiceRoleClient } from "../../../../../lib/supabase/server";
 import { validatePublicationPackage } from "@social-agent/xhs-adapter";

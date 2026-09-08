@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { ProductSourceRecordSchema } from "@social-agent/contracts/product";
-import { HttpError } from "../../../../../lib/auth";
-import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../../../../lib/supabase/server";
+import { HttpError } from "../../../../../lib/workspace-context";
+import { createSupabaseServiceRoleClient, requireServerInternalWorkspace } from "../../../../../lib/supabase/server";
 import { parseProductSourceRequest } from "../../../../../lib/api-inputs";
 
 type RouteContext = { params: Promise<{ productId: string }> };
@@ -15,8 +15,6 @@ function codeOf(error: unknown): string {
 }
 
 function statusOf(code: string): number {
-  if (code === "AUTH_REQUIRED") return 401;
-  if (code === "ADMIN_REQUIRED") return 403;
   if (code === "INVALID_SOURCE_INPUT" || code === "SOURCE_LOCATOR_INVALID" || code === "IDEMPOTENCY_KEY_INVALID") return 400;
   if (code === "PRODUCT_NOT_FOUND") return 404;
   if (code === "SOURCE_ALREADY_EXISTS") return 409;
@@ -64,13 +62,13 @@ async function findIdempotentSource(
   return { source: ProductSourceRecordSchema.parse(source) };
 }
 
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET(_request: Request, routeContext: RouteContext) {
   try {
-    const identity = await requireServerInternalAdmin();
-    const { productId } = await context.params;
+    const context = await requireServerInternalWorkspace();
+    const { productId } = await routeContext.params;
     const supabase = createSupabaseServiceRoleClient();
-    await requireProduct(supabase, identity.workspaceId, productId);
-    const { data: sources, error } = await supabase.from("product_sources").select("id,workspace_id,product_id,kind,locator,last_synced_at,created_at").eq("workspace_id", identity.workspaceId).eq("product_id", productId).order("created_at");
+    await requireProduct(supabase, context.workspaceId, productId);
+    const { data: sources, error } = await supabase.from("product_sources").select("id,workspace_id,product_id,kind,locator,last_synced_at,created_at").eq("workspace_id", context.workspaceId).eq("product_id", productId).order("created_at");
     if (error) throw new Error("SOURCES_UNAVAILABLE");
     return NextResponse.json({ sources: (sources ?? []).map((row) => ProductSourceRecordSchema.parse(row)) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
@@ -78,10 +76,10 @@ export async function GET(_request: Request, context: RouteContext) {
   }
 }
 
-export async function POST(request: Request, context: RouteContext) {
+export async function POST(request: Request, routeContext: RouteContext) {
   try {
-    const identity = await requireServerInternalAdmin();
-    const { productId } = await context.params;
+    const context = await requireServerInternalWorkspace();
+    const { productId } = await routeContext.params;
     let body: unknown;
     try {
       body = request.headers.get("content-type")?.includes("application/json") ? await request.json() : Object.fromEntries((await request.formData()).entries());
@@ -90,22 +88,22 @@ export async function POST(request: Request, context: RouteContext) {
     }
     const input = parseProductSourceRequest(body);
     const supabase = createSupabaseServiceRoleClient();
-    await requireProduct(supabase, identity.workspaceId, productId);
+    await requireProduct(supabase, context.workspaceId, productId);
     const idempotencyKey = idempotencyKeyFrom(request);
     const requestId = idempotencyKey || request.headers.get("x-request-id")?.trim() || randomUUID();
     if (idempotencyKey) {
-      const existing = await findIdempotentSource(supabase, identity.workspaceId, productId, idempotencyKey);
+      const existing = await findIdempotentSource(supabase, context.workspaceId, productId, idempotencyKey);
       if (existing) return NextResponse.json(existing, { headers: { "Cache-Control": "no-store" } });
     }
-    const { data: source, error: sourceError } = await supabase.from("product_sources").insert({ workspace_id: identity.workspaceId, product_id: productId, kind: input.kind, locator: input.locator }).select("id,workspace_id,product_id,kind,locator,last_synced_at,created_at").single();
+    const { data: source, error: sourceError } = await supabase.from("product_sources").insert({ workspace_id: context.workspaceId, product_id: productId, kind: input.kind, locator: input.locator }).select("id,workspace_id,product_id,kind,locator,last_synced_at,created_at").single();
     if (sourceError || !source) throw new Error("SOURCE_CREATE_FAILED");
     const sourceRecord = ProductSourceRecordSchema.parse(source);
     const { error: auditError } = await supabase.rpc("append_audit_event", {
-      p_workspace_id: identity.workspaceId,
+      p_workspace_id: context.workspaceId,
       p_event: {
         product_id: productId,
         actor_type: "user",
-        actor_id: identity.userId,
+        actor_id: context.actorId,
         action: "product_source.created",
         entity_type: "product_source",
         entity_id: sourceRecord.id,
@@ -115,7 +113,7 @@ export async function POST(request: Request, context: RouteContext) {
     });
     if (auditError) {
       const { error: rollbackError } = await supabase.from("product_sources").delete()
-        .eq("workspace_id", identity.workspaceId).eq("product_id", productId).eq("id", source.id);
+        .eq("workspace_id", context.workspaceId).eq("product_id", productId).eq("id", source.id);
       if (rollbackError) throw new Error("SOURCE_ROLLBACK_FAILED");
       throw new Error("AUDIT_WRITE_FAILED");
     }

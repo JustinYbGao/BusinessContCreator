@@ -15,7 +15,7 @@ import {
   parseUuid,
   requestId,
 } from "../../../../../lib/analytics-route";
-import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../../../../lib/supabase/server";
+import { createSupabaseServiceRoleClient, requireServerInternalWorkspace } from "../../../../../lib/supabase/server";
 
 const QualitativeObservationSchema = z.object({
   code: z.string().trim().min(1).max(100),
@@ -33,8 +33,6 @@ const RetrospectiveInputSchema = z.object({
 }).strict();
 
 const KNOWN_CODES = [
-  "AUTH_REQUIRED",
-  "ADMIN_REQUIRED",
   "INVALID_PUBLICATION_ID",
   "INVALID_RETROSPECTIVE_INPUT",
   "PUBLICATION_NOT_FOUND",
@@ -50,18 +48,16 @@ const KNOWN_CODES = [
 type RouteContext = { params: Promise<{ publicationId: string }> };
 
 function statusOf(code: string): number {
-  if (code === "AUTH_REQUIRED") return 401;
-  if (code === "ADMIN_REQUIRED") return 403;
   if (code === "INVALID_PUBLICATION_ID" || code === "INVALID_RETROSPECTIVE_INPUT") return 400;
   if (code === "PUBLICATION_NOT_FOUND") return 404;
   if (code === "PUBLICATION_STATE_INVALID" || code === "EVIDENCE_WINDOW_INCOMPLETE" || code === "PUBLICATION_TRANSITION_CONFLICT" || code === "LEARNING_CONFIDENCE_MISMATCH") return 409;
   return 500;
 }
 
-export async function POST(request: Request, context: RouteContext) {
+export async function POST(request: Request, routeContext: RouteContext) {
   try {
-    const identity = await requireServerInternalAdmin();
-    const { publicationId: rawPublicationId } = await context.params;
+    const context = await requireServerInternalWorkspace();
+    const { publicationId: rawPublicationId } = await routeContext.params;
     const publicationId = parseUuid(rawPublicationId, "INVALID_PUBLICATION_ID");
     let body: unknown;
     try {
@@ -76,14 +72,14 @@ export async function POST(request: Request, context: RouteContext) {
     const publicationRepository = new SupabasePublicationRepository(supabase);
     const metricRepository = new SupabaseMetricRepository(supabase);
     const learningRepository = new SupabaseLearningRepository(supabase);
-    const publication = await publicationRepository.getAnalytics({ workspaceId: identity.workspaceId }, publicationId);
+    const publication = await publicationRepository.getAnalytics({ workspaceId: context.workspaceId }, publicationId);
     if (!publication) throw new Error("PUBLICATION_NOT_FOUND");
     if (!publication.publishedAt || !["PUBLISHED", "MEASURING", "RETROSPECTED"].includes(publication.status)) {
       throw new Error("PUBLICATION_STATE_INVALID");
     }
 
     const campaignRows = await metricRepository.listForCampaign(
-      { workspaceId: identity.workspaceId },
+      { workspaceId: context.workspaceId },
       publication.productId,
       publication.campaignId,
     );
@@ -105,8 +101,8 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     const ctx = {
-      workspaceId: identity.workspaceId,
-      actor: { type: "user" as const, id: identity.userId },
+      workspaceId: context.workspaceId,
+      actor: { type: "user" as const, id: context.actorId },
       requestId: requestId(request),
     };
     if (publication.status === "PUBLISHED") {

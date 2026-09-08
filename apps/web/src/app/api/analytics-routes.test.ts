@@ -1,14 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { HttpError } from "../../lib/auth";
+import { HttpError } from "../../lib/workspace-context";
 
 const state = vi.hoisted(() => ({
-  identity: {
-    userId: "00000000-0000-4000-8000-000000000099",
-    email: "owner@example.com",
+  context: {
+    actorId: "00000000-0000-4000-8000-000000000000",
     workspaceId: "00000000-0000-4000-8000-000000000001",
   },
-  authError: null as Error | null,
-  requireServerInternalAdmin: vi.fn(),
+  workspaceError: null as Error | null,
+  requireServerInternalWorkspace: vi.fn(),
   registerPublished: vi.fn(),
   getAnalytics: vi.fn(),
   transition: vi.fn(),
@@ -23,7 +22,7 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock("../../lib/supabase/server", () => ({
-  requireServerInternalAdmin: state.requireServerInternalAdmin,
+  requireServerInternalWorkspace: state.requireServerInternalWorkspace,
   createSupabaseServiceRoleClient: vi.fn(() => state.supabase),
 }));
 
@@ -64,7 +63,7 @@ function routeParams(publicationId = PUBLICATION_ID) {
 
 function metricRow(productId = PRODUCT_ID) {
   return {
-    workspaceId: state.identity.workspaceId,
+    workspaceId: state.context.workspaceId,
     productId,
     publicationId: PUBLICATION_ID,
     window: "24h",
@@ -86,7 +85,7 @@ function campaignSample(status: "PUBLISHED" | "MEASURING" | "RETROSPECTED" = "PU
   const row = metricRow();
   return {
     id: PUBLICATION_ID,
-    workspaceId: state.identity.workspaceId,
+    workspaceId: state.context.workspaceId,
     productId: PRODUCT_ID,
     campaignId: CAMPAIGN_ID,
     status,
@@ -104,11 +103,11 @@ function campaignSample(status: "PUBLISHED" | "MEASURING" | "RETROSPECTED" = "PU
 }
 
 beforeEach(() => {
-  state.authError = null;
-  state.requireServerInternalAdmin.mockReset();
-  state.requireServerInternalAdmin.mockImplementation(async () => {
-    if (state.authError) throw state.authError;
-    return state.identity;
+  state.workspaceError = null;
+  state.requireServerInternalWorkspace.mockReset();
+  state.requireServerInternalWorkspace.mockImplementation(async () => {
+    if (state.workspaceError) throw state.workspaceError;
+    return state.context;
   });
   for (const mock of [
     state.registerPublished,
@@ -125,7 +124,7 @@ beforeEach(() => {
   state.supabase.from.mockReset();
   state.registerPublished.mockResolvedValue({
     id: PUBLICATION_ID,
-    workspaceId: state.identity.workspaceId,
+    workspaceId: state.context.workspaceId,
     productId: PRODUCT_ID,
     campaignId: CAMPAIGN_ID,
     status: "PUBLISHED",
@@ -168,7 +167,7 @@ describe("Task 11 analytics routes", () => {
       });
       expect(fetchSpy).not.toHaveBeenCalled();
       expect(state.registerPublished).toHaveBeenCalledWith(
-        expect.objectContaining({ workspaceId: state.identity.workspaceId, requestId: "publish-request" }),
+        expect.objectContaining({ workspaceId: state.context.workspaceId, requestId: "publish-request" }),
         PUBLICATION_ID,
         { publicUrl: "https://xhslink.com/abc", publishedAt: "2026-08-16T10:00:00.000Z" },
       );
@@ -180,7 +179,7 @@ describe("Task 11 analytics routes", () => {
   it("returns the scoped metric windows", async () => {
     state.getAnalytics.mockResolvedValue({
       id: PUBLICATION_ID,
-      workspaceId: state.identity.workspaceId,
+      workspaceId: state.context.workspaceId,
       productId: PRODUCT_ID,
       campaignId: CAMPAIGN_ID,
       status: "PUBLISHED",
@@ -201,7 +200,7 @@ describe("Task 11 analytics routes", () => {
     expect(body.publication).toEqual(expect.objectContaining({ id: PUBLICATION_ID, publicUrl: "https://xhslink.com/abc" }));
     expect(body.windows).toHaveLength(3);
     expect(body.windows.find((window: { window: string }) => window.window === "24h")).toEqual(expect.objectContaining({ state: "captured" }));
-    expect(state.getAnalytics).toHaveBeenCalledWith({ workspaceId: state.identity.workspaceId }, PUBLICATION_ID);
+    expect(state.getAnalytics).toHaveBeenCalledWith({ workspaceId: state.context.workspaceId }, PUBLICATION_ID);
   });
 
   it("rejects a mixed-product import before calling the metric write boundary", async () => {
@@ -240,7 +239,7 @@ describe("Task 11 analytics routes", () => {
     expect(await response.json()).toEqual({ importId: "import-1", acceptedRows: 1, format: "json" });
     expect(state.importSnapshots).toHaveBeenCalledTimes(1);
     expect(state.importSnapshots).toHaveBeenCalledWith(
-      expect.objectContaining({ workspaceId: state.identity.workspaceId, requestId: "import-request" }),
+      expect.objectContaining({ workspaceId: state.context.workspaceId, requestId: "import-request" }),
       expect.objectContaining({
         productId: PRODUCT_ID,
         format: "json",
@@ -258,7 +257,7 @@ describe("Task 11 analytics routes", () => {
   it("does not write a Learning when the requested evidence window is incomplete", async () => {
     state.getAnalytics.mockResolvedValue({
       id: PUBLICATION_ID,
-      workspaceId: state.identity.workspaceId,
+      workspaceId: state.context.workspaceId,
       productId: PRODUCT_ID,
       campaignId: CAMPAIGN_ID,
       status: "PUBLISHED",
@@ -268,7 +267,7 @@ describe("Task 11 analytics routes", () => {
     });
     state.listForCampaign.mockResolvedValue([{
       id: PUBLICATION_ID,
-      workspaceId: state.identity.workspaceId,
+      workspaceId: state.context.workspaceId,
       productId: PRODUCT_ID,
       campaignId: CAMPAIGN_ID,
       status: "PUBLISHED",
@@ -294,7 +293,7 @@ describe("Task 11 analytics routes", () => {
     const sample = campaignSample();
     state.getAnalytics.mockResolvedValue({
       id: PUBLICATION_ID,
-      workspaceId: state.identity.workspaceId,
+      workspaceId: state.context.workspaceId,
       productId: PRODUCT_ID,
       campaignId: CAMPAIGN_ID,
       status: "PUBLISHED",
@@ -333,21 +332,21 @@ describe("Task 11 analytics routes", () => {
     );
   });
 
-  it("fails closed for auth and never accepts a request-selected Workspace", async () => {
-    state.authError = new HttpError(403, "ADMIN_REQUIRED");
+  it("fails closed for Workspace lookup and never accepts a request-selected Workspace", async () => {
+    state.workspaceError = new HttpError(500, "WORKSPACE_UNAVAILABLE");
     const response = await getWeeklyReport(new Request(
       `http://localhost/api/reports/weekly?workspaceId=00000000-0000-4000-8000-000000000099&productId=${PRODUCT_ID}&campaignId=${CAMPAIGN_ID}&weekStart=2026-08-10`,
     ));
-    expect(response.status).toBe(403);
-    expect(await response.json()).toEqual({ ok: false, error: "ADMIN_REQUIRED" });
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ ok: false, error: "WORKSPACE_UNAVAILABLE" });
 
-    state.authError = null;
+    state.workspaceError = null;
     const scopedResponse = await getWeeklyReport(new Request(
       `http://localhost/api/reports/weekly?workspaceId=00000000-0000-4000-8000-000000000099&productId=${PRODUCT_ID}&campaignId=${CAMPAIGN_ID}&weekStart=2026-08-10`,
     ));
     expect(scopedResponse.status).toBe(404);
     expect(state.getByCampaignWeek).toHaveBeenCalledWith(
-      { workspaceId: state.identity.workspaceId }, PRODUCT_ID, CAMPAIGN_ID, "2026-08-10",
+      { workspaceId: state.context.workspaceId }, PRODUCT_ID, CAMPAIGN_ID, "2026-08-10",
     );
   });
 
@@ -364,7 +363,7 @@ describe("Task 11 analytics routes", () => {
 
     expect(response.status).toBe(200);
     expect(state.createOrReplace).toHaveBeenCalledWith(
-      expect.objectContaining({ workspaceId: state.identity.workspaceId, requestId: "report-request" }),
+      expect.objectContaining({ workspaceId: state.context.workspaceId, requestId: "report-request" }),
       expect.objectContaining({ productId: PRODUCT_ID, campaignId: CAMPAIGN_ID, weekStart: "2026-08-10" }),
     );
   });

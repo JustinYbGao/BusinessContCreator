@@ -2,8 +2,8 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { SupabasePublisherDeviceRepository } from "@social-agent/db";
 import { z } from "zod";
-import { HttpError } from "../../../../lib/auth";
-import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../../../lib/supabase/server";
+import { HttpError } from "../../../../lib/workspace-context";
+import { createSupabaseServiceRoleClient, requireServerInternalWorkspace } from "../../../../lib/supabase/server";
 
 const DeviceInputSchema = z.object({ name: z.string().trim().min(1).max(120) }).strict();
 
@@ -20,17 +20,17 @@ function errorCode(error: unknown): string {
 
 function errorResponse(error: unknown) {
   const code = errorCode(error);
-  const status = code === "AUTH_REQUIRED" ? 401 : code === "ADMIN_REQUIRED" ? 403 : code === "INVALID_DEVICE_INPUT" ? 400 : code === "DEVICE_NOT_FOUND" ? 404 : 500;
+  const status = code === "INVALID_DEVICE_INPUT" ? 400 : code === "DEVICE_NOT_FOUND" ? 404 : 500;
   return NextResponse.json({ ok: false, error: code }, { status, headers: { "Cache-Control": "no-store" } });
 }
 
 export async function GET() {
   try {
-    const identity = await requireServerInternalAdmin();
+    const context = await requireServerInternalWorkspace();
     const supabase = createSupabaseServiceRoleClient();
     const { data, error } = await supabase.from("publisher_devices")
       .select("id,name,created_at,revoked_at")
-      .eq("workspace_id", identity.workspaceId)
+      .eq("workspace_id", context.workspaceId)
       .order("created_at", { ascending: false });
     if (error) throw new Error("DEVICES_UNAVAILABLE");
     return NextResponse.json({ devices: data ?? [] }, { headers: { "Cache-Control": "no-store" } });
@@ -41,7 +41,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const identity = await requireServerInternalAdmin();
+    const context = await requireServerInternalWorkspace();
     let body: unknown;
     try {
       body = await request.json();
@@ -54,8 +54,8 @@ export async function POST(request: Request) {
     const tokenSha256 = createHash("sha256").update(token, "utf8").digest("hex");
     const supabase = createSupabaseServiceRoleClient();
     const device = await new SupabasePublisherDeviceRepository(supabase).create({
-      workspaceId: identity.workspaceId,
-      actor: { type: "user", id: identity.userId },
+      workspaceId: context.workspaceId,
+      actor: { type: "user", id: context.actorId },
       requestId: requestId(request),
     }, parsed.data.name, tokenSha256);
     return NextResponse.json({ device: { ...device, name: parsed.data.name }, token }, { status: 201, headers: { "Cache-Control": "no-store" } });
@@ -66,13 +66,13 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const identity = await requireServerInternalAdmin();
+    const context = await requireServerInternalWorkspace();
     const deviceId = new URL(request.url).searchParams.get("id")?.trim();
     if (!deviceId || !z.string().uuid().safeParse(deviceId).success) throw new Error("DEVICE_NOT_FOUND");
     const supabase = createSupabaseServiceRoleClient();
     await new SupabasePublisherDeviceRepository(supabase).revoke({
-      workspaceId: identity.workspaceId,
-      actor: { type: "user", id: identity.userId },
+      workspaceId: context.workspaceId,
+      actor: { type: "user", id: context.actorId },
       requestId: requestId(request),
     }, deviceId);
     return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });

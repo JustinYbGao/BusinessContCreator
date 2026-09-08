@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { HttpError } from "../../../lib/auth";
-import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../../lib/supabase/server";
+import { HttpError } from "../../../lib/workspace-context";
+import { createSupabaseServiceRoleClient, requireServerInternalWorkspace } from "../../../lib/supabase/server";
 import { parseCreateContentRequest } from "../../../lib/api-inputs";
 
 const TopicRowSchema = z.object({
@@ -23,8 +23,6 @@ function errorCode(error: unknown): string {
 }
 
 function errorStatus(code: string): number {
-  if (code === "AUTH_REQUIRED") return 401;
-  if (code === "ADMIN_REQUIRED") return 403;
   if (code === "INVALID_CONTENT_INPUT" || code === "IDEMPOTENCY_KEY_INVALID") return 400;
   if (code === "TOPIC_NOT_SELECTED" || code === "CAMPAIGN_NOT_FOUND" || code === "PRODUCT_NOT_FOUND") return 404;
   if (code === "VERIFIED_FACT_REQUIRED" || code === "FACT_SCOPE_MISMATCH") return 409;
@@ -136,7 +134,7 @@ function buildBrief(input: {
 
 export async function POST(request: Request) {
   try {
-    const identity = await requireServerInternalAdmin();
+    const context = await requireServerInternalWorkspace();
     let body: unknown;
     try {
       body = await requestBody(request);
@@ -147,13 +145,13 @@ export async function POST(request: Request) {
     const idempotencyKey = idempotencyKeyFrom(request, input.idempotencyKey);
     const requestId = idempotencyKey;
     const supabase = createSupabaseServiceRoleClient();
-    const existing = await findIdempotentContent(supabase, identity.workspaceId, idempotencyKey);
+    const existing = await findIdempotentContent(supabase, context.workspaceId, idempotencyKey);
     if (existing) return NextResponse.json({ content: existing }, { headers: { "Cache-Control": "no-store" } });
 
     const { data: topicRow, error: topicError } = await supabase
       .from("topic_candidates")
       .select("id,campaign_id,product_id,title,angle,pillar,fact_ids,selected")
-      .eq("workspace_id", identity.workspaceId)
+      .eq("workspace_id", context.workspaceId)
       .eq("campaign_id", input.campaignId)
       .eq("id", input.topicId)
       .eq("selected", true)
@@ -164,8 +162,8 @@ export async function POST(request: Request) {
     if (topic.campaign_id !== input.campaignId) throw new Error("TOPIC_SCOPE_MISMATCH");
 
     const [{ data: campaign, error: campaignError }, { data: product, error: productError }] = await Promise.all([
-      supabase.from("campaigns").select("id,product_id,goal,audience").eq("workspace_id", identity.workspaceId).eq("id", input.campaignId).maybeSingle(),
-      supabase.from("products").select("id,brand_profile").eq("workspace_id", identity.workspaceId).eq("id", topic.product_id).is("deleted_at", null).maybeSingle(),
+      supabase.from("campaigns").select("id,product_id,goal,audience").eq("workspace_id", context.workspaceId).eq("id", input.campaignId).maybeSingle(),
+      supabase.from("products").select("id,brand_profile").eq("workspace_id", context.workspaceId).eq("id", topic.product_id).is("deleted_at", null).maybeSingle(),
     ]);
     if (campaignError || !campaign || campaign.product_id !== topic.product_id) throw new Error("CAMPAIGN_NOT_FOUND");
     if (productError || !product) throw new Error("PRODUCT_NOT_FOUND");
@@ -175,7 +173,7 @@ export async function POST(request: Request) {
     const { data: factRows, error: factsError } = await supabase
       .from("product_facts")
       .select("id,statement,category,status,public_use_allowed")
-      .eq("workspace_id", identity.workspaceId)
+      .eq("workspace_id", context.workspaceId)
       .eq("product_id", topic.product_id)
       .eq("status", "verified")
       .eq("public_use_allowed", true)
@@ -185,8 +183,8 @@ export async function POST(request: Request) {
     if (topic.fact_ids.some((factId) => !factMap.has(factId))) throw new Error("FACT_SCOPE_MISMATCH");
 
     const [assetsResult, learningsResult] = await Promise.all([
-      supabase.from("assets").select("id,kind,source_locator").eq("workspace_id", identity.workspaceId).eq("product_id", topic.product_id).is("content_version_id", null).eq("provenance", "source").eq("verification_status", "verified").eq("public_use_allowed", true).order("created_at"),
-      supabase.from("learnings").select("id,payload").eq("workspace_id", identity.workspaceId).eq("product_id", topic.product_id).order("created_at"),
+      supabase.from("assets").select("id,kind,source_locator").eq("workspace_id", context.workspaceId).eq("product_id", topic.product_id).is("content_version_id", null).eq("provenance", "source").eq("verification_status", "verified").eq("public_use_allowed", true).order("created_at"),
+      supabase.from("learnings").select("id,payload").eq("workspace_id", context.workspaceId).eq("product_id", topic.product_id).order("created_at"),
     ]);
     if (assetsResult.error) throw new Error("ASSETS_UNAVAILABLE");
     if (learningsResult.error) throw new Error("LEARNINGS_UNAVAILABLE");
@@ -209,12 +207,12 @@ export async function POST(request: Request) {
     });
 
     const { data: contentRow, error: contentError } = await supabase.rpc("create_content_with_brief", {
-      p_workspace_id: identity.workspaceId,
+      p_workspace_id: context.workspaceId,
       p_product_id: topic.product_id,
       p_campaign_id: campaign.id,
       p_topic_id: topic.id,
       p_brief: brief,
-      p_created_by: identity.userId,
+      p_created_by: context.actorId,
       p_idempotency_key: idempotencyKey,
       p_actor_type: "user",
       p_request_id: requestId,

@@ -4,8 +4,8 @@ import { ContentDraftSchema } from "@social-agent/contracts/content";
 import { OpenAiCompatibleClient } from "@social-agent/llm";
 import { buildReviewContext, reviewContent, type ReviewFact, type ReviewSourceAsset } from "@social-agent/review-engine";
 import { z } from "zod";
-import { HttpError } from "../../../../../lib/auth";
-import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../../../../lib/supabase/server";
+import { HttpError } from "../../../../../lib/workspace-context";
+import { createSupabaseServiceRoleClient, requireServerInternalWorkspace } from "../../../../../lib/supabase/server";
 import { parseReviewContentRequest } from "../../../../../lib/api-inputs";
 
 function errorCode(error: unknown): string {
@@ -15,8 +15,6 @@ function errorCode(error: unknown): string {
 }
 
 function errorStatus(code: string): number {
-  if (code === "AUTH_REQUIRED") return 401;
-  if (code === "ADMIN_REQUIRED") return 403;
   if (code === "INVALID_REVIEW_INPUT" || code === "CONTENT_ID_INVALID") return 400;
   if (code === "CONTENT_NOT_FOUND" || code === "CONTENT_VERSION_REQUIRED" || code === "CONTENT_VERSION_NOT_FOUND") return 404;
   if (code === "CONTENT_VERSION_IMMUTABLE" || code === "CONTENT_SCOPE_MISMATCH") return 409;
@@ -145,7 +143,7 @@ export async function POST(
   { params }: { params: Promise<{ contentId: string }> },
 ) {
   try {
-    const identity = await requireServerInternalAdmin();
+    const context = await requireServerInternalWorkspace();
     const { contentId } = await params;
     let body: unknown;
     try {
@@ -156,10 +154,10 @@ export async function POST(
     if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("INVALID_REVIEW_INPUT");
     const input = parseReviewContentRequest(body);
     const supabase = createSupabaseServiceRoleClient();
-    const { content, version } = await getContentAndVersion(supabase, identity.workspaceId, contentId, input.contentVersionId);
-    const reviewInputs = await getReviewInputs(supabase, identity.workspaceId, content.product_id, version.id, version.payload);
+    const { content, version } = await getContentAndVersion(supabase, context.workspaceId, contentId, input.contentVersionId);
+    const reviewInputs = await getReviewInputs(supabase, context.workspaceId, content.product_id, version.id, version.payload);
     const result = await reviewContent({
-      workspaceId: identity.workspaceId,
+      workspaceId: context.workspaceId,
       productId: content.product_id,
       contentVersionId: version.id,
       draft: version.payload,
@@ -167,12 +165,12 @@ export async function POST(
     }, new OpenAiCompatibleClient());
     const findings = result.findings.map(({ code, severity, message }) => ({ code, severity, message }));
     const { data: reviewRun, error: reviewRunError } = await supabase.rpc("replace_current_review_run_with_context", {
-      p_workspace_id: identity.workspaceId,
+      p_workspace_id: context.workspaceId,
       p_content_version_id: version.id,
       p_findings: findings,
       p_review_context: reviewInputs.reviewContext,
       p_actor_type: "user",
-      p_actor_id: identity.userId,
+      p_actor_id: context.actorId,
       p_request_id: requestId(request, input.idempotencyKey),
     });
     if (reviewRunError?.message.includes("REVIEW_CONTEXT_CHANGED")) throw new Error("REVIEW_CONTEXT_CHANGED");

@@ -15,7 +15,7 @@ import {
   parseWeekStart,
   requestId,
 } from "../../../../lib/analytics-route";
-import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../../../lib/supabase/server";
+import { createSupabaseServiceRoleClient, requireServerInternalWorkspace } from "../../../../lib/supabase/server";
 
 const ReportParamsSchema = z.object({
   productId: z.string().uuid(),
@@ -30,8 +30,6 @@ const ReportBodySchema = z.object({
 }).strict();
 
 const KNOWN_CODES = [
-  "AUTH_REQUIRED",
-  "ADMIN_REQUIRED",
   "INVALID_REPORT_INPUT",
   "INVALID_WEEK_START",
   "WEEKLY_REPORT_NOT_FOUND",
@@ -40,8 +38,6 @@ const KNOWN_CODES = [
 ];
 
 function statusOf(code: string): number {
-  if (code === "AUTH_REQUIRED") return 401;
-  if (code === "ADMIN_REQUIRED") return 403;
   if (code === "WEEKLY_REPORT_NOT_FOUND") return 404;
   if (code === "INVALID_REPORT_INPUT" || code === "INVALID_WEEK_START" || code === "REQUEST_ID_INVALID") return 400;
   return 500;
@@ -89,11 +85,11 @@ async function parseParams(request: Request, allowBody: boolean) {
 
 export async function GET(request: Request) {
   try {
-    const identity = await requireServerInternalAdmin();
+    const context = await requireServerInternalWorkspace();
     const params = await parseParams(request, false);
     const supabase = createSupabaseServiceRoleClient();
     const report = await new SupabaseWeeklyReportRepository(supabase).getByCampaignWeek(
-      { workspaceId: identity.workspaceId },
+      { workspaceId: context.workspaceId },
       params.productId,
       params.campaignId,
       params.weekStart,
@@ -107,15 +103,15 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const identity = await requireServerInternalAdmin();
+    const context = await requireServerInternalWorkspace();
     const params = await parseParams(request, true);
     const supabase = createSupabaseServiceRoleClient();
     const metricRepository = new SupabaseMetricRepository(supabase);
     const learningRepository = new SupabaseLearningRepository(supabase);
     const reportRepository = new SupabaseWeeklyReportRepository(supabase);
     const [publicationRows, learningRows] = await Promise.all([
-      metricRepository.listForCampaign({ workspaceId: identity.workspaceId }, params.productId, params.campaignId),
-      learningRepository.listEligible({ workspaceId: identity.workspaceId }, params.productId, params.campaignId),
+      metricRepository.listForCampaign({ workspaceId: context.workspaceId }, params.productId, params.campaignId),
+      learningRepository.listEligible({ workspaceId: context.workspaceId }, params.productId, params.campaignId),
     ]);
     const publications = publicationRows
       .map(parseComparableSample)
@@ -127,8 +123,8 @@ export async function POST(request: Request) {
       eligibleLearningIds: learningRows.map((learning) => learning.id),
     });
     const stored = await reportRepository.createOrReplace({
-      workspaceId: identity.workspaceId,
-      actor: { type: "user", id: identity.userId },
+      workspaceId: context.workspaceId,
+      actor: { type: "user", id: context.actorId },
       requestId: requestId(request),
     }, {
       productId: params.productId,

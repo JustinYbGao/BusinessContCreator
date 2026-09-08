@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { ProductCategorySchema, ProductFactRecordSchema, ProductSourceRecordSchema } from "@social-agent/contracts/product";
 import { z } from "zod";
-import { HttpError } from "../../../../../lib/auth";
-import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../../../../lib/supabase/server";
+import { HttpError } from "../../../../../lib/workspace-context";
+import { createSupabaseServiceRoleClient, requireServerInternalWorkspace } from "../../../../../lib/supabase/server";
 import { parseFactAction } from "../../../../../lib/api-inputs";
 
 const ManualFactSchema = z.object({ statement: z.string().trim().min(1).max(2_000), category: ProductCategorySchema, sourceNote: z.string().trim().min(1).max(500) }).strict();
@@ -17,8 +17,6 @@ function codeOf(error: unknown): string {
 }
 
 function statusOf(code: string): number {
-  if (code === "AUTH_REQUIRED") return 401;
-  if (code === "ADMIN_REQUIRED") return 403;
   if (code === "INVALID_FACT_ACTION" || code === "INVALID_MANUAL_FACT" || code === "IDEMPOTENCY_KEY_INVALID") return 400;
   if (code === "PRODUCT_NOT_FOUND" || code === "FACT_NOT_FOUND") return 404;
   if (code === "FACT_ALREADY_EXISTS") return 409;
@@ -96,15 +94,15 @@ async function findIdempotentManualFact(
   return { source: ProductSourceRecordSchema.parse(source), fact: ProductFactRecordSchema.parse(fact) };
 }
 
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET(_request: Request, routeContext: RouteContext) {
   try {
-    const identity = await requireServerInternalAdmin();
-    const { productId } = await context.params;
+    const context = await requireServerInternalWorkspace();
+    const { productId } = await routeContext.params;
     const supabase = createSupabaseServiceRoleClient();
-    await requireProduct(supabase, identity.workspaceId, productId);
+    await requireProduct(supabase, context.workspaceId, productId);
     const { data, error } = await supabase.from("product_facts")
       .select("id,workspace_id,product_id,source_id,statement,category,source_locator,evidence_excerpt,status,public_use_allowed,verified_by,verified_at,created_at")
-      .eq("workspace_id", identity.workspaceId).eq("product_id", productId).order("created_at");
+      .eq("workspace_id", context.workspaceId).eq("product_id", productId).order("created_at");
     if (error) throw new Error("FACTS_UNAVAILABLE");
     return NextResponse.json({ facts: (data ?? []).map((row) => ProductFactRecordSchema.parse(row)) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
@@ -112,13 +110,13 @@ export async function GET(_request: Request, context: RouteContext) {
   }
 }
 
-export async function POST(request: Request, context: RouteContext) {
+export async function POST(request: Request, routeContext: RouteContext) {
   try {
-    const identity = await requireServerInternalAdmin();
-    const { productId } = await context.params;
+    const context = await requireServerInternalWorkspace();
+    const { productId } = await routeContext.params;
     const body = await readBody(request);
     const supabase = createSupabaseServiceRoleClient();
-    await requireProduct(supabase, identity.workspaceId, productId);
+    await requireProduct(supabase, context.workspaceId, productId);
     const idempotencyKey = idempotencyKeyFrom(request);
     const requestId = idempotencyKey || request.headers.get("x-request-id")?.trim() || randomUUID();
 
@@ -126,22 +124,22 @@ export async function POST(request: Request, context: RouteContext) {
       const input = parseFactAction(body);
       const { data: previousFact, error: previousFactError } = await supabase.from("product_facts")
         .select("id,statement,status,public_use_allowed,verified_by,verified_at")
-        .eq("workspace_id", identity.workspaceId).eq("product_id", productId).eq("id", input.factId).maybeSingle();
+        .eq("workspace_id", context.workspaceId).eq("product_id", productId).eq("id", input.factId).maybeSingle();
       if (previousFactError) throw new Error("FACT_LOOKUP_FAILED");
       if (!previousFact) throw new Error("FACT_NOT_FOUND");
       const values = input.decision === "block"
         ? { status: "blocked", public_use_allowed: false, verified_by: null, verified_at: null }
-        : { status: "verified", public_use_allowed: true, verified_by: identity.userId, verified_at: new Date().toISOString(), ...(input.editedStatement ? { statement: input.editedStatement.trim() } : {}) };
+        : { status: "verified", public_use_allowed: true, verified_by: context.actorId, verified_at: new Date().toISOString(), ...(input.editedStatement ? { statement: input.editedStatement.trim() } : {}) };
       const { data: fact, error } = await supabase.from("product_facts")
         .update(values)
-        .eq("workspace_id", identity.workspaceId).eq("product_id", productId).eq("id", input.factId)
+        .eq("workspace_id", context.workspaceId).eq("product_id", productId).eq("id", input.factId)
         .select("id,workspace_id,product_id,source_id,statement,category,source_locator,evidence_excerpt,status,public_use_allowed,verified_by,verified_at,created_at")
         .maybeSingle();
       if (error) throw new Error("FACT_UPDATE_FAILED");
       if (!fact) throw new Error("FACT_NOT_FOUND");
       const factRecord = ProductFactRecordSchema.parse(fact);
       try {
-        await appendAudit(supabase, identity.workspaceId, identity.userId, requestId, productId, "product_fact", factRecord.id, `product_fact.${input.decision}`, { publicUseAllowed: factRecord.public_use_allowed, verifiedAt: factRecord.verified_at });
+        await appendAudit(supabase, context.workspaceId, context.actorId, requestId, productId, "product_fact", factRecord.id, `product_fact.${input.decision}`, { publicUseAllowed: factRecord.public_use_allowed, verifiedAt: factRecord.verified_at });
       } catch (auditError) {
         await supabase.from("product_facts").update({
           statement: previousFact.statement,
@@ -149,7 +147,7 @@ export async function POST(request: Request, context: RouteContext) {
           public_use_allowed: previousFact.public_use_allowed,
           verified_by: previousFact.verified_by,
           verified_at: previousFact.verified_at,
-        }).eq("workspace_id", identity.workspaceId).eq("product_id", productId).eq("id", factRecord.id)
+        }).eq("workspace_id", context.workspaceId).eq("product_id", productId).eq("id", factRecord.id)
           .eq("status", factRecord.status).eq("public_use_allowed", factRecord.public_use_allowed);
         throw auditError;
       }
@@ -159,7 +157,7 @@ export async function POST(request: Request, context: RouteContext) {
     const manualInput = ManualFactSchema.safeParse(body);
     if (!manualInput.success) throw new Error("INVALID_MANUAL_FACT");
     if (idempotencyKey) {
-      const existing = await findIdempotentManualFact(supabase, identity.workspaceId, productId, idempotencyKey);
+      const existing = await findIdempotentManualFact(supabase, context.workspaceId, productId, idempotencyKey);
       if (existing) return NextResponse.json(existing, { headers: { "Cache-Control": "no-store" } });
     }
     const candidate = {
@@ -169,31 +167,31 @@ export async function POST(request: Request, context: RouteContext) {
       evidenceExcerpt: manualInput.data.sourceNote.trim(),
     };
     const { data: source, error: sourceError } = await supabase.from("product_sources")
-      .insert({ workspace_id: identity.workspaceId, product_id: productId, kind: "manual", locator: candidate.sourceLocator })
+      .insert({ workspace_id: context.workspaceId, product_id: productId, kind: "manual", locator: candidate.sourceLocator })
       .select("id,workspace_id,product_id,kind,locator,last_synced_at,created_at")
       .single();
     if (sourceError || !source) throw new Error("MANUAL_SOURCE_CREATE_FAILED");
     const sourceRecord = ProductSourceRecordSchema.parse(source);
     try {
-      await appendAudit(supabase, identity.workspaceId, identity.userId, requestId, productId, "product_source", sourceRecord.id, "product_source.created", { kind: "manual" });
+      await appendAudit(supabase, context.workspaceId, context.actorId, requestId, productId, "product_source", sourceRecord.id, "product_source.created", { kind: "manual" });
     } catch (error) {
-      await supabase.from("product_sources").delete().eq("workspace_id", identity.workspaceId).eq("product_id", productId).eq("id", source.id);
+      await supabase.from("product_sources").delete().eq("workspace_id", context.workspaceId).eq("product_id", productId).eq("id", source.id);
       throw error;
     }
     const { data: fact, error: factError } = await supabase.from("product_facts")
-      .insert({ workspace_id: identity.workspaceId, product_id: productId, source_id: sourceRecord.id, statement: candidate.statement, category: candidate.category, source_locator: candidate.sourceLocator, evidence_excerpt: candidate.evidenceExcerpt, status: "candidate", public_use_allowed: false, verified_by: null, verified_at: null })
+      .insert({ workspace_id: context.workspaceId, product_id: productId, source_id: sourceRecord.id, statement: candidate.statement, category: candidate.category, source_locator: candidate.sourceLocator, evidence_excerpt: candidate.evidenceExcerpt, status: "candidate", public_use_allowed: false, verified_by: null, verified_at: null })
       .select("id,workspace_id,product_id,source_id,statement,category,source_locator,evidence_excerpt,status,public_use_allowed,verified_by,verified_at,created_at")
       .single();
     if (factError || !fact) {
-      await supabase.from("product_sources").delete().eq("workspace_id", identity.workspaceId).eq("product_id", productId).eq("id", source.id);
+      await supabase.from("product_sources").delete().eq("workspace_id", context.workspaceId).eq("product_id", productId).eq("id", source.id);
       throw new Error("MANUAL_FACT_CREATE_FAILED");
     }
     const factRecord = ProductFactRecordSchema.parse(fact);
     try {
-      await appendAudit(supabase, identity.workspaceId, identity.userId, requestId, productId, "product_fact", factRecord.id, "product_fact.candidate_created", { sourceId: sourceRecord.id });
+      await appendAudit(supabase, context.workspaceId, context.actorId, requestId, productId, "product_fact", factRecord.id, "product_fact.candidate_created", { sourceId: sourceRecord.id });
     } catch (error) {
-      await supabase.from("product_facts").delete().eq("workspace_id", identity.workspaceId).eq("product_id", productId).eq("id", factRecord.id);
-      await supabase.from("product_sources").delete().eq("workspace_id", identity.workspaceId).eq("product_id", productId).eq("id", sourceRecord.id);
+      await supabase.from("product_facts").delete().eq("workspace_id", context.workspaceId).eq("product_id", productId).eq("id", factRecord.id);
+      await supabase.from("product_sources").delete().eq("workspace_id", context.workspaceId).eq("product_id", productId).eq("id", sourceRecord.id);
       throw error;
     }
     return NextResponse.json({ source: sourceRecord, fact: factRecord }, { status: 201, headers: { "Cache-Control": "no-store" } });

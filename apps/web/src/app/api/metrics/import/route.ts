@@ -10,7 +10,7 @@ import {
   errorResponse,
   requestId,
 } from "../../../../lib/analytics-route";
-import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../../../lib/supabase/server";
+import { createSupabaseServiceRoleClient, requireServerInternalWorkspace } from "../../../../lib/supabase/server";
 
 const JsonEnvelopeSchema = z.object({
   productId: z.string().uuid(),
@@ -20,8 +20,6 @@ const JsonEnvelopeSchema = z.object({
 const REQUEST_BYTE_LIMIT = IMPORT_LIMITS.maxBytes + 64 * 1024;
 
 const KNOWN_CODES = [
-  "AUTH_REQUIRED",
-  "ADMIN_REQUIRED",
   "REQUEST_ID_INVALID",
   "INVALID_IMPORT_INPUT",
   "IMPORT_TOO_LARGE",
@@ -46,8 +44,6 @@ const KNOWN_CODES = [
 ];
 
 function statusOf(code: string): number {
-  if (code === "AUTH_REQUIRED") return 401;
-  if (code === "ADMIN_REQUIRED") return 403;
   if (code === "IMPORT_SCOPE_MISMATCH" || code === "PRODUCT_SCOPE_MISMATCH" || code === "PUBLICATION_SCOPE_MISMATCH") return 409;
   if (code === "IMPORT_UNAVAILABLE") return 500;
   return 400;
@@ -117,11 +113,11 @@ function parserErrorCode(parsed: ParsedMetricImport): string {
 
 export async function POST(request: Request) {
   try {
-    const identity = await requireServerInternalAdmin();
+    const context = await requireServerInternalWorkspace();
     const input = await parseInput(request);
     if (input.parsed.errors.length > 0) throw new Error(parserErrorCode(input.parsed));
     if (input.parsed.rows.length === 0) throw new Error("IMPORT_EMPTY");
-    if (input.parsed.rows.some((row) => row.workspaceId !== identity.workspaceId || row.productId !== input.productId)) {
+    if (input.parsed.rows.some((row) => row.workspaceId !== context.workspaceId || row.productId !== input.productId)) {
       throw new Error("IMPORT_SCOPE_MISMATCH");
     }
 
@@ -129,7 +125,7 @@ export async function POST(request: Request) {
     const supabase = createSupabaseServiceRoleClient();
     const productResult = await supabase.from("products")
       .select("id")
-      .eq("workspace_id", identity.workspaceId)
+      .eq("workspace_id", context.workspaceId)
       .eq("id", input.productId)
       .is("deleted_at", null)
       .maybeSingle();
@@ -138,7 +134,7 @@ export async function POST(request: Request) {
 
     const publicationsResult = await supabase.from("publications")
       .select("id")
-      .eq("workspace_id", identity.workspaceId)
+      .eq("workspace_id", context.workspaceId)
       .eq("product_id", input.productId)
       .in("id", publicationIds);
     if (publicationsResult.error) throw new Error("IMPORT_UNAVAILABLE");
@@ -155,8 +151,8 @@ export async function POST(request: Request) {
       capturedAt,
     }));
     const result = await new SupabaseMetricRepository(supabase).importSnapshots({
-      workspaceId: identity.workspaceId,
-      actor: { type: "user", id: identity.userId },
+      workspaceId: context.workspaceId,
+      actor: { type: "user", id: context.actorId },
       requestId: requestId(request),
     }, {
       productId: input.productId,

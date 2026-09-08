@@ -10,6 +10,7 @@
     "lint": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
     "@social-agent/analytics": "workspace:*",
     "@social-agent/content-engine": "workspace:*",
     "@social-agent/contracts": "workspace:*",
@@ -17,7 +18,6 @@
     "@social-agent/llm": "workspace:*",
     "@social-agent/review-engine": "workspace:*",
     "@social-agent/xhs-adapter": "workspace:*",
-    "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "2.57.4",
     "next": "^16.0.0",
     "react": "^19.0.0",

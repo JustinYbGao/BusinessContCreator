@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { SupabasePublisherDeviceRepository } from "@social-agent/db";
-import { HttpError } from "./auth";
+import { HttpError } from "./workspace-context";
 
 export interface PublisherDeviceIdentity {
   deviceId: string;

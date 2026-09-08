@@ -3,8 +3,8 @@ import { NextResponse } from "next/server";
 import { ContentDraftSchema } from "@social-agent/contracts/content";
 import { findApprovalRevalidationFindings, type ReviewFact, type ReviewSourceAsset } from "@social-agent/review-engine";
 import { z } from "zod";
-import { HttpError } from "../../../../../lib/auth";
-import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../../../../lib/supabase/server";
+import { HttpError } from "../../../../../lib/workspace-context";
+import { createSupabaseServiceRoleClient, requireServerInternalWorkspace } from "../../../../../lib/supabase/server";
 import { parseApproveContentRequest } from "../../../../../lib/api-inputs";
 
 function errorCode(error: unknown): string {
@@ -14,8 +14,6 @@ function errorCode(error: unknown): string {
 }
 
 function errorStatus(code: string): number {
-  if (code === "AUTH_REQUIRED") return 401;
-  if (code === "ADMIN_REQUIRED") return 403;
   if (code === "INVALID_APPROVE_INPUT") return 400;
   if (code === "CONTENT_VERSION_NOT_FOUND" || code === "CONTENT_NOT_FOUND") return 404;
   if (code === "CONTENT_VERSION_IMMUTABLE" || code === "CURRENT_REVIEW_REQUIRED" || code === "CURRENT_REVIEW_NOT_PASSED" || code === "CURRENT_REVIEW_UNAVAILABLE" || code === "CONTENT_VERSION_CHANGED" || code === "REVIEW_CONTEXT_CHANGED" || code === "ACTOR_ID_INVALID") return 409;
@@ -116,18 +114,18 @@ export async function POST(
   { params }: { params: Promise<{ contentId: string }> },
 ) {
   try {
-    const identity = await requireServerInternalAdmin();
+    const context = await requireServerInternalWorkspace();
     const { contentId } = await params;
     const body = await requestBody(request).catch(() => { throw new Error("INVALID_APPROVE_INPUT"); });
     const input = parseApproveContentRequest(body);
     if (!z.string().uuid().safeParse(contentId).success) throw new Error("INVALID_APPROVE_INPUT");
-    if (!z.string().uuid().safeParse(identity.userId).success) throw new Error("ACTOR_ID_INVALID");
+    if (!z.string().uuid().safeParse(context.actorId).success) throw new Error("ACTOR_ID_INVALID");
 
     const supabase = createSupabaseServiceRoleClient();
     const { data: version, error: versionError } = await supabase
       .from("content_versions")
       .select("id,workspace_id,product_id,content_id,version,payload,content_sha256,status,approved_by,approved_at")
-      .eq("workspace_id", identity.workspaceId)
+      .eq("workspace_id", context.workspaceId)
       .eq("content_id", contentId)
       .eq("id", input.contentVersionId)
       .maybeSingle();
@@ -137,12 +135,12 @@ export async function POST(
 
     const revalidationInputs = await getApprovalRevalidationInputs(
       supabase,
-      identity.workspaceId,
+      context.workspaceId,
       version.product_id,
       version.id,
     );
     const revalidationFindings = findApprovalRevalidationFindings({
-      workspaceId: identity.workspaceId,
+      workspaceId: context.workspaceId,
       productId: version.product_id,
       draft: version.payload,
       ...revalidationInputs,
@@ -170,11 +168,11 @@ export async function POST(
     }
 
     const { data: approved, error: approveError } = await supabase.rpc("approve_content_version", {
-      p_workspace_id: identity.workspaceId,
+      p_workspace_id: context.workspaceId,
       p_content_version_id: version.id,
       p_expected_payload: version.payload,
       p_expected_sha256: version.content_sha256,
-      p_approved_by: identity.userId,
+      p_approved_by: context.actorId,
       p_actor_type: "user",
       p_request_id: requestId(request, input.idempotencyKey),
     });

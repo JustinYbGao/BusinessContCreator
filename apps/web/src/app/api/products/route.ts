@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { ChannelRecordSchema, ProductRecordSchema } from "@social-agent/contracts/product";
-import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../../lib/supabase/server";
-import { HttpError } from "../../../lib/auth";
+import { createSupabaseServiceRoleClient, requireServerInternalWorkspace } from "../../../lib/supabase/server";
+import { HttpError } from "../../../lib/workspace-context";
 import { parseProductRequest } from "../../../lib/api-inputs";
 
 function errorCode(error: unknown): string {
@@ -15,8 +15,6 @@ function errorCode(error: unknown): string {
 }
 
 function errorStatus(code: string): number {
-  if (code === "AUTH_REQUIRED") return 401;
-  if (code === "ADMIN_REQUIRED") return 403;
   if (code === "INVALID_PRODUCT_INPUT" || code === "IDEMPOTENCY_KEY_INVALID") return 400;
   if (code === "PRODUCT_ALREADY_EXISTS") return 409;
   return 500;
@@ -29,7 +27,7 @@ function responseError(error: unknown) {
 
 async function appendAudit(
   supabase: ReturnType<typeof createSupabaseServiceRoleClient>,
-  identity: { userId: string; workspaceId: string },
+  context: { actorId: string; workspaceId: string },
   requestId: string,
   productId: string,
   entityId: string,
@@ -37,11 +35,11 @@ async function appendAudit(
   payload: unknown,
 ) {
   const { error } = await supabase.rpc("append_audit_event", {
-    p_workspace_id: identity.workspaceId,
+    p_workspace_id: context.workspaceId,
     p_event: {
       product_id: productId,
       actor_type: "user",
-      actor_id: identity.userId,
+      actor_id: context.actorId,
       action,
       entity_type: "product",
       entity_id: entityId,
@@ -87,12 +85,12 @@ async function findIdempotentProduct(
 
 export async function GET() {
   try {
-    const identity = await requireServerInternalAdmin();
+    const context = await requireServerInternalWorkspace();
     const supabase = createSupabaseServiceRoleClient();
     const { data, error } = await supabase
       .from("products")
       .select("id,workspace_id,name,slug,positioning,brand_profile,deleted_at,created_at")
-      .eq("workspace_id", identity.workspaceId)
+      .eq("workspace_id", context.workspaceId)
       .is("deleted_at", null)
       .order("created_at");
     if (error) throw new Error("PRODUCTS_UNAVAILABLE");
@@ -104,7 +102,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const identity = await requireServerInternalAdmin();
+    const context = await requireServerInternalWorkspace();
     let body: unknown;
     try {
       body = await request.json();
@@ -116,13 +114,13 @@ export async function POST(request: Request) {
     const idempotencyKey = idempotencyKeyFrom(request);
     const requestId = idempotencyKey || request.headers.get("x-request-id")?.trim() || randomUUID();
     if (idempotencyKey) {
-      const existing = await findIdempotentProduct(supabase, identity.workspaceId, idempotencyKey);
+      const existing = await findIdempotentProduct(supabase, context.workspaceId, idempotencyKey);
       if (existing) return NextResponse.json(existing, { headers: { "Cache-Control": "no-store" } });
     }
     const { data: product, error: productError } = await supabase
       .from("products")
       .insert({
-        workspace_id: identity.workspaceId,
+        workspace_id: context.workspaceId,
         name: input.name,
         slug: input.slug,
         positioning: input.positioning,
@@ -138,20 +136,20 @@ export async function POST(request: Request) {
 
     const { data: channel, error: channelError } = await supabase
       .from("channels")
-      .insert({ workspace_id: identity.workspaceId, product_id: product.id, kind: "xiaohongshu", status: "active", settings: {} })
+      .insert({ workspace_id: context.workspaceId, product_id: product.id, kind: "xiaohongshu", status: "active", settings: {} })
       .select("id,workspace_id,product_id,kind,status,settings,created_at")
       .single();
     if (channelError || !channel) {
-      await supabase.from("products").delete().eq("workspace_id", identity.workspaceId).eq("id", product.id);
+      await supabase.from("products").delete().eq("workspace_id", context.workspaceId).eq("id", product.id);
       throw new Error("PRODUCT_CHANNEL_CREATE_FAILED");
     }
     const channelRecord = ChannelRecordSchema.parse(channel);
 
     try {
-      await appendAudit(supabase, identity, requestId, productRecord.id, productRecord.id, "product.created", { slug: productRecord.slug, channelId: channelRecord.id, idempotencyKey });
+      await appendAudit(supabase, context, requestId, productRecord.id, productRecord.id, "product.created", { slug: productRecord.slug, channelId: channelRecord.id, idempotencyKey });
     } catch (error) {
-      await supabase.from("channels").delete().eq("workspace_id", identity.workspaceId).eq("id", channel.id);
-      await supabase.from("products").delete().eq("workspace_id", identity.workspaceId).eq("id", product.id);
+      await supabase.from("channels").delete().eq("workspace_id", context.workspaceId).eq("id", channel.id);
+      await supabase.from("products").delete().eq("workspace_id", context.workspaceId).eq("id", product.id);
       throw error;
     }
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { IconMark, StatusPill } from "../../../../components/console-ui";
 import { useState, type FormEvent } from "react";
 
 export interface PublisherDevice {
@@ -53,30 +54,33 @@ export default function DeviceManager({ initialDevices }: { initialDevices: Publ
   }
 
   return (
-    <section style={{ display: "grid", gap: 24, marginTop: 32 }}>
-      <form onSubmit={createDevice} style={{ background: "#fff", border: "1px solid #dbe4d8", borderRadius: 18, display: "flex", gap: 12, padding: 20 }}>
-        <label style={{ display: "grid", flex: 1, gap: 8 }}>
-          <span style={{ color: "#536057", fontSize: 13, fontWeight: 700 }}>设备名称</span>
-          <input value={name} onChange={(event) => setName(event.target.value)} placeholder="MacBook 本地发布器" required maxLength={120} style={{ border: "1px solid #cbd8c8", borderRadius: 10, padding: "11px 12px" }} />
+    <section>
+      <form className="device-form" onSubmit={createDevice}>
+        <label>
+          <span>设备名称</span>
+          <input value={name} onChange={(event) => setName(event.target.value)} placeholder="MacBook 本地发布器" required maxLength={120} />
         </label>
-        <button disabled={busy} type="submit" style={{ alignSelf: "end", background: "#17211b", border: 0, borderRadius: 10, color: "#fff", cursor: "pointer", padding: "12px 18px" }}>创建令牌</button>
+        <button className="button button-primary" disabled={busy} type="submit">创建令牌 <IconMark name="arrow" size={16} /></button>
       </form>
 
-      {token ? <aside style={{ background: "#fff4d6", border: "1px solid #e4c56b", borderRadius: 18, padding: 20 }}>
+      {token ? <aside className="token-panel">
         <strong>只显示这一次：</strong>
-        <code style={{ display: "block", marginTop: 12, overflowWrap: "anywhere" }}>{token}</code>
-        <p style={{ color: "#6f5d2d", fontSize: 13, marginBottom: 0 }}>请立即复制到本机安全环境文件。关闭或刷新页面后不能再次查看。</p>
+        <code>{token}</code>
+        <p>请立即复制到本机安全环境文件。关闭或刷新页面后不能再次查看。</p>
       </aside> : null}
 
-      {error ? <p role="alert" style={{ color: "#a33b32" }}>{error}</p> : null}
+      {error ? <p className="error-message" role="alert">{error}</p> : null}
 
-      <div style={{ display: "grid", gap: 12 }}>
-        {devices.map((device) => <article key={device.id} style={{ alignItems: "center", background: "#fff", border: "1px solid #dbe4d8", borderRadius: 14, display: "flex", justifyContent: "space-between", gap: 20, padding: 18 }}>
+      <div className="device-list">
+        {devices.map((device) => <article className="device-row" key={device.id}>
           <div>
             <strong>{device.name}</strong>
-            <p style={{ color: "#7b887d", fontSize: 13, margin: "6px 0 0" }}>{device.revokedAt ? "已撤销" : "可用"} · 创建于 {new Date(device.createdAt).toLocaleString("zh-CN")}</p>
+            <p>{device.revokedAt ? "已撤销" : "可用"} · 创建于 {new Date(device.createdAt).toLocaleString("zh-CN")}</p>
           </div>
-          {!device.revokedAt ? <button disabled={busy} onClick={() => void revokeDevice(device.id)} type="button" style={{ background: "transparent", border: "1px solid #d59b91", borderRadius: 9, color: "#9b3b31", cursor: "pointer", padding: "8px 12px" }}>撤销</button> : null}
+          <div className="form-actions">
+            <StatusPill label={device.revokedAt ? "已撤销" : "可用"} tone={device.revokedAt ? "quiet" : "healthy"} />
+            {!device.revokedAt ? <button className="button button-danger button-small" disabled={busy} onClick={() => void revokeDevice(device.id)} type="button">撤销</button> : null}
+          </div>
         </article>)}
       </div>
     </section>

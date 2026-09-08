@@ -4,7 +4,6 @@ import { validateE2eEnvironment } from "../src/lib/e2e-environment";
 
 export const E2E_ROOT = resolve(__dirname, "../../..");
 export const E2E_ENV_FILE = resolve(E2E_ROOT, ".env.test.local");
-export const E2E_STORAGE_STATE = resolve(E2E_ROOT, "test-results/stage1-storage-state.json");
 export const E2E_FIXTURE_SOURCE_DIR = resolve(E2E_ROOT, "packages/test-support/fixtures/dormchef-source");
 
 const ENV_KEYS = new Set([
@@ -12,13 +11,10 @@ const ENV_KEYS = new Set([
   "SOCIAL_AGENT_SUPABASE_ANON_KEY",
   "SOCIAL_AGENT_SUPABASE_SERVICE_ROLE_KEY",
   "INTERNAL_WORKSPACE_ID",
-  "ADMIN_EMAIL_ALLOWLIST",
   "DORMCHEF_SOURCE_DIR",
   "SOCIAL_AGENT_WORKER_MODE",
   "WORKER_HEALTH_PORT",
   "E2E_BASE_URL",
-  "E2E_TEST_EMAIL",
-  "ALLOW_TEST_AUTH_FIXTURE",
 ]);
 
 function parseValue(value: string): string {
@@ -59,11 +55,4 @@ export function requiredE2eEnvironment(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(`E2E_ENV_${name}_NOT_CONFIGURED`);
   return value;
-}
-
-export function testEmail(): string {
-  const explicit = process.env.E2E_TEST_EMAIL?.trim();
-  if (explicit) return explicit;
-  const firstAllowed = process.env.ADMIN_EMAIL_ALLOWLIST?.split(",").map((value) => value.trim()).find(Boolean);
-  return firstAllowed || "stage1-e2e@example.com";
 }

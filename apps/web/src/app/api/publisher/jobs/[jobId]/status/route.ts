@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { SupabasePublicationRepository } from "@social-agent/db";
 import { z } from "zod";
-import { HttpError } from "../../../../../../lib/auth";
+import { HttpError } from "../../../../../../lib/workspace-context";
 import { requirePublisherDevice } from "../../../../../../lib/publisher-auth";
 import { createSupabaseServiceRoleClient } from "../../../../../../lib/supabase/server";
 import { inspectPng, MAX_IMAGE_BYTES } from "@social-agent/xhs-adapter";
@@ -57,9 +57,9 @@ async function parseInput(request: Request): Promise<{ input: z.infer<typeof Sta
   return { input: parsed.data, screenshot: value && typeof value !== "string" ? value as File : null };
 }
 
-export async function POST(request: Request, context: RouteContext) {
+export async function POST(request: Request, routeContext: RouteContext) {
   try {
-    const { jobId } = await context.params;
+    const { jobId } = await routeContext.params;
     if (!z.string().uuid().safeParse(jobId).success) throw new Error("PUBLISHER_JOB_NOT_FOUND");
     const input = await parseInput(request);
     const supabase = createSupabaseServiceRoleClient();

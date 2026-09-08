@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import Link from "next/link";
-import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../../lib/supabase/server";
+import { IconMark, StatusPill } from "../../../components/console-ui";
+import { createSupabaseServiceRoleClient, requireServerInternalWorkspace } from "../../../lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -15,17 +16,17 @@ type ReviewItem = {
 };
 
 export default async function ReviewPage() {
-  const identity = await requireServerInternalAdmin();
+  const context = await requireServerInternalWorkspace();
   const supabase = createSupabaseServiceRoleClient();
   const { data: contents, error: contentsError } = await supabase
     .from("contents")
     .select("id,campaign_id,topic_id,status")
-    .eq("workspace_id", identity.workspaceId)
+    .eq("workspace_id", context.workspaceId)
     .eq("status", "review_required");
   const contentIds = (contents ?? []).map((content) => content.id);
   const [versionsResult, topicsResult] = await Promise.all([
-    contentIds.length === 0 ? Promise.resolve({ data: [], error: null }) : supabase.from("content_versions").select("id,content_id,version,status").eq("workspace_id", identity.workspaceId).in("content_id", contentIds).order("version", { ascending: false }),
-    contents && contents.length > 0 ? supabase.from("topic_candidates").select("id,title").eq("workspace_id", identity.workspaceId).in("id", contents.map((content) => content.topic_id)) : Promise.resolve({ data: [], error: null }),
+    contentIds.length === 0 ? Promise.resolve({ data: [], error: null }) : supabase.from("content_versions").select("id,content_id,version,status").eq("workspace_id", context.workspaceId).in("content_id", contentIds).order("version", { ascending: false }),
+    contents && contents.length > 0 ? supabase.from("topic_candidates").select("id,title").eq("workspace_id", context.workspaceId).in("id", contents.map((content) => content.topic_id)) : Promise.resolve({ data: [], error: null }),
   ]);
   const versions = versionsResult.data ?? [];
   const versionIds = versions.map((version) => version.id);
@@ -48,25 +49,58 @@ export default async function ReviewPage() {
 
   return (
     <main>
-      <p style={{ color: "#5b705d", fontSize: 13, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase" }}>Human review</p>
-      <h1 style={{ fontSize: 48, letterSpacing: "-0.05em", margin: "12px 0" }}>审核队列</h1>
-      <p style={{ color: "#536057", lineHeight: 1.6, margin: 0 }}>阻塞性 findings 优先显示；没有当前通过的 Review，不提供强制通过路径。</p>
-      {contentsError ? <p style={{ background: "#f7e4df", borderRadius: 16, color: "#7c2d22", marginTop: 28, padding: 18 }}>暂时无法加载审核队列。</p> : null}
-      <section aria-label="待审核内容" style={{ display: "grid", gap: 16, marginTop: 28 }}>
-        {items.length === 0 ? <p style={{ background: "#fff", border: "1px solid #dbe4d8", borderRadius: 18, color: "#536057", padding: 24 }}>当前没有需要人工审核的内容版本。</p> : items.map((item) => {
+      <div className="page-heading page-heading--compact">
+        <div>
+          <p className="eyebrow">Human review</p>
+          <h1>审核队列</h1>
+          <p>阻塞性 findings 优先显示；没有当前通过的 Review，不提供强制通过路径。</p>
+        </div>
+        <Link className="button button-secondary" href="/app"><IconMark name="arrow" size={16} />返回工作台</Link>
+      </div>
+
+      {contentsError ? <div className="alert alert-danger" role="alert"><strong>暂时无法加载审核队列。</strong></div> : null}
+      <section aria-label="待审核内容" className="surface-list">
+        {items.length === 0 ? (
+          <div className="empty-state surface-card">
+            <p>当前没有需要人工审核的内容版本。</p>
+            <Link className="text-link" href="/app/campaigns">前往选题库 <IconMark name="arrow" size={15} /></Link>
+          </div>
+        ) : items.map((item) => {
           const blocking = item.findings.filter((finding) => finding.severity === "blocking");
           const canApprove = item.result === "passed" && blocking.length === 0;
-          return <article key={item.versionId} style={{ background: "#fff", border: blocking.length > 0 ? "2px solid #c95745" : "1px solid #dbe4d8", borderRadius: 18, padding: 24 }}>
-            <div style={{ alignItems: "start", display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "space-between" }}>
-              <div><p style={{ color: "#5b705d", fontSize: 13, fontWeight: 700, margin: 0 }}>Content Version {item.version}</p><h2 style={{ fontSize: 25, margin: "8px 0" }}>{item.topicTitle}</h2><Link href={`/app/contents/${item.contentId}`} style={{ color: "#315d38", fontSize: 13 }}>打开内容详情 →</Link></div>
-              <span style={{ background: blocking.length > 0 ? "#f7e4df" : "#e5ecdf", borderRadius: 999, color: blocking.length > 0 ? "#7c2d22" : "#315d38", fontSize: 13, fontWeight: 700, padding: "7px 10px" }}>{blocking.length > 0 ? `${blocking.length} 个阻塞` : item.result === "passed" ? "审核通过" : "待审核"}</span>
-            </div>
-            {item.findings.length > 0 ? <ul style={{ color: "#536057", lineHeight: 1.6, marginBottom: 0, paddingLeft: 20 }}>{item.findings.map((finding) => <li key={`${finding.code}-${finding.message}`}><strong>{finding.severity} · {finding.code}</strong>：{finding.message}</li>)}</ul> : <p style={{ color: "#7b887d" }}>暂无当前 Review findings。</p>}
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 18 }}>
-              <form action={`/api/contents/${item.contentId}/review`} method="post"><input name="contentVersionId" type="hidden" value={item.versionId} /><input name="idempotencyKey" type="hidden" value={`review:${item.versionId}:${randomUUID()}`} /><button type="submit" style={{ background: "#f4ead4", border: 0, borderRadius: 999, color: "#536057", cursor: "pointer", fontWeight: 700, padding: "10px 14px" }}>重新审核</button></form>
-              {canApprove ? <form action={`/api/contents/${item.contentId}/approve`} method="post"><input name="contentVersionId" type="hidden" value={item.versionId} /><input name="idempotencyKey" type="hidden" value={`approve:${item.versionId}:${randomUUID()}`} /><button type="submit" style={{ background: "#315d38", border: 0, borderRadius: 999, color: "#fff", cursor: "pointer", fontWeight: 700, padding: "10px 14px" }}>批准当前版本</button></form> : null}
-            </div>
-          </article>;
+          const statusTone = blocking.length > 0 ? "danger" : item.result === "passed" ? "healthy" : "attention";
+          const statusLabel = blocking.length > 0 ? `${blocking.length} 个阻塞` : item.result === "passed" ? "审核通过" : "待审核";
+          return (
+            <article className="surface-card" data-attention={blocking.length > 0} key={item.versionId}>
+              <div className="surface-card-header">
+                <div>
+                  <p className="eyebrow">Content Version {item.version}</p>
+                  <h2>{item.topicTitle}</h2>
+                  <p><Link href={`/app/contents/${item.contentId}`}>打开内容详情 <IconMark name="arrow" size={14} /></Link></p>
+                </div>
+                <StatusPill label={statusLabel} tone={statusTone} />
+              </div>
+              {item.findings.length > 0 ? (
+                <ul className="content-list">
+                  {item.findings.map((finding) => <li key={`${finding.code}-${finding.message}`}><strong>{finding.severity} · {finding.code}</strong>：{finding.message}</li>)}
+                </ul>
+              ) : <p className="card-copy card-copy--muted">暂无当前 Review findings。</p>}
+              <div className="form-actions">
+                <form action={`/api/contents/${item.contentId}/review`} method="post">
+                  <input name="contentVersionId" type="hidden" value={item.versionId} />
+                  <input name="idempotencyKey" type="hidden" value={`review:${item.versionId}:${randomUUID()}`} />
+                  <button className="button button-quiet button-small" type="submit">重新审核</button>
+                </form>
+                {canApprove ? (
+                  <form action={`/api/contents/${item.contentId}/approve`} method="post">
+                    <input name="contentVersionId" type="hidden" value={item.versionId} />
+                    <input name="idempotencyKey" type="hidden" value={`approve:${item.versionId}:${randomUUID()}`} />
+                    <button className="button button-primary button-small" type="submit">批准当前版本</button>
+                  </form>
+                ) : null}
+              </div>
+            </article>
+          );
         })}
       </section>
     </main>

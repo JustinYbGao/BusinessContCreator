@@ -1,88 +1,221 @@
-import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../lib/supabase/server";
+import Link from "next/link";
+import { IconMark, StatusPill } from "../../components/console-ui";
+import { buildDashboardModel, type DashboardInput } from "./dashboard-model";
+import { createSupabaseServiceRoleClient, requireServerInternalWorkspace } from "../../lib/supabase/server";
 
-type ConsoleSnapshot = {
-  productName: string;
-  campaignName: string;
-  reviewCount: number;
-  pendingPublicationCount: number;
-  dueMetricWindows: number;
-};
+export const dynamic = "force-dynamic";
 
-const emptySnapshot: ConsoleSnapshot = {
-  productName: "暂无 Product",
-  campaignName: "暂无 Campaign",
-  reviewCount: 0,
-  pendingPublicationCount: 0,
-  dueMetricWindows: 0,
-};
-
-async function loadSnapshot(workspaceId: string): Promise<ConsoleSnapshot> {
-  try {
-    const supabase = createSupabaseServiceRoleClient();
-    const [products, campaigns, review, pending, measurable] = await Promise.all([
-      supabase.from("products").select("name").eq("workspace_id", workspaceId).is("deleted_at", null).order("created_at").limit(1),
-      supabase.from("campaigns").select("name").eq("workspace_id", workspaceId).order("created_at", { ascending: false }).limit(1),
-      supabase.from("contents").select("id", { count: "exact", head: true }).eq("workspace_id", workspaceId).eq("status", "review_required"),
-      supabase.from("publications").select("id").eq("workspace_id", workspaceId).in("status", ["READY_TO_PREFILL", "PREFILLING", "NEEDS_LOGIN", "PREFILL_FAILED", "AWAITING_HUMAN_PUBLISH"]),
-      supabase.from("publications").select("id").eq("workspace_id", workspaceId).in("status", ["PUBLISHED", "MEASURING"]),
-    ]);
-
-    const measurableIds = (measurable.data ?? []).map((publication) => publication.id);
-    let snapshotCount = 0;
-    if (measurableIds.length > 0) {
-      const snapshots = await supabase.from("metric_snapshots").select("id").in("publication_id", measurableIds);
-      snapshotCount = snapshots.data?.length ?? 0;
-    }
-
-    return {
-      productName: products.data?.[0]?.name ?? emptySnapshot.productName,
-      campaignName: campaigns.data?.[0]?.name ?? emptySnapshot.campaignName,
-      reviewCount: review.count ?? 0,
-      pendingPublicationCount: pending.data?.length ?? 0,
-      dueMetricWindows: Math.max(measurableIds.length * 3 - snapshotCount, 0),
-    };
-  } catch {
-    return emptySnapshot;
-  }
+function failedDashboardModel(message: string) {
+  const input: DashboardInput = {
+    productName: null,
+    campaign: null,
+    reviewCount: 0,
+    pendingPublicationCount: 0,
+    dueMetricWindows: 0,
+    reviewItems: [],
+    errorMessage: message,
+  };
+  return buildDashboardModel(input);
 }
 
-const cards = [
-  ["Product", "productName", "当前工作空间的产品"],
-  ["Current Campaign", "campaignName", "当前运营周期"],
-  ["待审核内容", "reviewCount", "需要人工确认"],
-  ["待处理发布", "pendingPublicationCount", "停在人工发布之前"],
-  ["待补指标窗口", "dueMetricWindows", "24h / 72h / 7d"],
-] as const;
+async function loadDashboardModel(workspaceId: string) {
+  const supabase = createSupabaseServiceRoleClient();
+  const [productsResult, campaignsResult, reviewResult, pendingResult, measurableResult] = await Promise.all([
+    supabase.from("products").select("name").eq("workspace_id", workspaceId).is("deleted_at", null).order("created_at").limit(1),
+    supabase.from("campaigns").select("name,starts_on,ends_on").eq("workspace_id", workspaceId).order("created_at", { ascending: false }).limit(1),
+    supabase.from("contents").select("id,topic_id,created_at", { count: "exact" }).eq("workspace_id", workspaceId).eq("status", "review_required").order("created_at", { ascending: false }).limit(5),
+    supabase.from("publications").select("id").eq("workspace_id", workspaceId).in("status", ["READY_TO_PREFILL", "PREFILLING", "NEEDS_LOGIN", "PREFILL_FAILED", "AWAITING_HUMAN_PUBLISH"]),
+    supabase.from("publications").select("id").eq("workspace_id", workspaceId).in("status", ["PUBLISHED", "MEASURING"]),
+  ]);
+
+  if (productsResult.error || campaignsResult.error || reviewResult.error || pendingResult.error || measurableResult.error) {
+    return failedDashboardModel("暂时无法连接工作空间数据，请稍后重新加载。");
+  }
+
+  const reviewContents = reviewResult.data ?? [];
+  const topicIds = reviewContents.map((content) => content.topic_id).filter((id): id is string => typeof id === "string");
+  const topicsResult = topicIds.length > 0
+    ? await supabase.from("topic_candidates").select("id,title").eq("workspace_id", workspaceId).in("id", topicIds)
+    : { data: [], error: null };
+  if (topicsResult.error) return failedDashboardModel("暂时无法加载选题信息，请稍后重新加载。");
+
+  const measurableIds = (measurableResult.data ?? []).map((publication) => publication.id);
+  const snapshotsResult = measurableIds.length > 0
+    ? await supabase.from("metric_snapshots").select("id").in("publication_id", measurableIds)
+    : { data: [], error: null };
+  if (snapshotsResult.error) return failedDashboardModel("暂时无法加载指标窗口，请稍后重新加载。");
+
+  const topicTitles = new Map((topicsResult.data ?? []).map((topic) => [topic.id, topic.title]));
+  const reviewItems = reviewContents.map((content) => ({
+    id: content.id,
+    title: topicTitles.get(content.topic_id) ?? "未命名选题",
+    createdAt: content.created_at,
+  }));
+
+  return buildDashboardModel({
+    productName: productsResult.data?.[0]?.name ?? null,
+    campaign: campaignsResult.data?.[0]
+      ? {
+          name: campaignsResult.data[0].name,
+          startsOn: campaignsResult.data[0].starts_on,
+          endsOn: campaignsResult.data[0].ends_on,
+        }
+      : null,
+    reviewCount: reviewResult.count ?? reviewItems.length,
+    pendingPublicationCount: pendingResult.data?.length ?? 0,
+    dueMetricWindows: Math.max(measurableIds.length * 3 - (snapshotsResult.data?.length ?? 0), 0),
+    reviewItems,
+  });
+}
+
+function formatReviewTime(value: string | null): string {
+  if (!value) return "时间待补充";
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Shanghai",
+  }).format(new Date(value));
+}
 
 export default async function ConsolePage() {
-  const identity = await requireServerInternalAdmin();
-  const snapshot = await loadSnapshot(identity.workspaceId);
+  const context = await requireServerInternalWorkspace();
+  const model = await loadDashboardModel(context.workspaceId);
+  const pendingWork = model.reviewCount + model.pendingPublicationCount;
 
   return (
-    <main>
-      <p style={{ color: "#5b705d", fontSize: 13, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase" }}>Internal console</p>
-      <div style={{ display: "flex", alignItems: "end", justifyContent: "space-between", gap: 20, flexWrap: "wrap" }}>
+    <main className="dashboard-page">
+      <div className="page-heading">
         <div>
-          <h1 style={{ fontSize: 48, letterSpacing: "-0.05em", margin: "12px 0" }}>工作台</h1>
-          <p style={{ color: "#536057", lineHeight: 1.6, margin: 0 }}>从真实产品事实开始，查看当前内容运营闭环。</p>
+          <p className="eyebrow">本周内容工作台</p>
+          <h1>内容包工作台</h1>
+          <p>从已确认的产品事实出发，先处理今天最重要的内容动作。</p>
         </div>
-        <span style={{ color: "#7b887d", fontSize: 13 }}>Workspace: {identity.workspaceId}</span>
+        <div className="dashboard-heading-status">
+          <StatusPill label={model.statusLabel} tone={model.statusTone} />
+          <span>{model.campaignDates}</span>
+        </div>
       </div>
 
-      <section aria-label="运营概览" style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", marginTop: 40 }}>
-        {cards.map(([label, field, caption]) => (
-          <article key={label} style={{ background: "#fff", border: "1px solid #dbe4d8", borderRadius: 18, minHeight: 150, padding: 22 }}>
-            <p style={{ color: "#5b705d", fontSize: 13, fontWeight: 700, margin: 0 }}>{label}</p>
-            <p style={{ fontSize: field === "productName" || field === "campaignName" ? 22 : 44, fontWeight: 800, letterSpacing: "-0.04em", margin: "28px 0 8px", overflowWrap: "anywhere" }}>{String(snapshot[field])}</p>
-            <p style={{ color: "#7b887d", fontSize: 13, margin: 0 }}>{caption}</p>
-          </article>
-        ))}
+      {model.state === "error" ? (
+        <div className="alert alert-danger" role="alert">
+          <div>
+            <strong>{model.errorMessage}</strong>
+            <p>页面没有用空数据替代真实错误，确认数据库恢复后再试一次。</p>
+          </div>
+          <Link className="button button-secondary" href="/app">重新加载</Link>
+        </div>
+      ) : null}
+
+      <section aria-label="本周工作状态" className="dashboard-status-row">
+        <div className="dashboard-status-metrics">
+          <div className="dashboard-status-metric">
+            <span>当前状态</span>
+            <strong data-tone={model.statusTone}>{model.statusLabel}</strong>
+            <p>{model.activityLabel}</p>
+          </div>
+          <div className="dashboard-status-metric">
+            <span>当前内容包</span>
+            <strong className="status-campaign">{model.campaignName}</strong>
+            <p>{model.productName}</p>
+          </div>
+          <div className="dashboard-status-metric">
+            <span>待处理事项</span>
+            <strong>{pendingWork}</strong>
+            <p>{model.dueMetricWindows} 个指标窗口待补录</p>
+          </div>
+        </div>
+        <div className="dashboard-status-action">
+          <Link className="button button-primary" href={model.nextActionHref}>
+            <span>{model.nextActionLabel}</span>
+            <IconMark name="arrow" size={17} weight="bold" />
+          </Link>
+        </div>
       </section>
 
-      <section style={{ background: "#e5ecdf", borderRadius: 22, marginTop: 32, padding: 28 }}>
-        <p style={{ color: "#5b705d", fontSize: 13, fontWeight: 700, marginTop: 0 }}>发布安全边界</p>
-        <h2 style={{ fontSize: 28, letterSpacing: "-0.04em", margin: "12px 0" }}>准备可以自动化，最终发布必须由人完成。</h2>
-        <p style={{ color: "#536057", lineHeight: 1.65, marginBottom: 0, maxWidth: 720 }}>控制台只管理经过审核的内容版本和发布准备状态，不保存浏览器 Cookie，也不提供自动点击小红书最终发布按钮的路径。</p>
+      <section className="dashboard-grid">
+        <div className="surface dashboard-review-surface">
+          <div className="dashboard-review-head">
+            <div>
+              <p className="eyebrow">需要人工确认</p>
+              <h2>待审核内容包</h2>
+              <p>{model.reviewCount} 篇内容 · 阻塞性问题优先处理</p>
+            </div>
+            <Link className="text-link" href="/app/review">查看审核队列 <IconMark name="arrow" size={15} /></Link>
+          </div>
+          {model.reviewItems.length === 0 ? (
+            <div className="empty-state">
+              <p>当前没有待审核内容。</p>
+              <Link className="text-link" href="/app/campaigns">前往选题库 <IconMark name="arrow" size={15} /></Link>
+            </div>
+          ) : (
+            <div className="dashboard-table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col">内容预览</th>
+                    <th scope="col">来源</th>
+                    <th scope="col">创建时间</th>
+                    <th scope="col">状态</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {model.reviewItems.map((item) => (
+                    <tr key={item.id}>
+                      <td>
+                        <Link className="table-content-cell" href={`/app/contents/${item.id}`}>
+                          <span aria-hidden="true" className="table-content-icon"><IconMark name="document" size={18} /></span>
+                          <span>
+                            <span className="table-content-title">{item.title}</span>
+                            <span className="table-content-subtitle">打开内容详情查看当前版本</span>
+                          </span>
+                        </Link>
+                      </td>
+                      <td>当前内容包</td>
+                      <td>{formatReviewTime(item.createdAt)}</td>
+                      <td><StatusPill label="待审核" tone="attention" /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {model.reviewItems.length > 0 ? (
+            <div className="dashboard-review-footer">
+              <span>已展示 {model.reviewItems.length} 篇</span>
+              <Link className="text-link" href="/app/review">打开完整队列 <IconMark name="arrow" size={15} /></Link>
+            </div>
+          ) : null}
+        </div>
+
+        <aside className="surface dashboard-activity">
+          <p className="eyebrow">工作流状态</p>
+          <h2>需要关注</h2>
+          <ul className="dashboard-activity-list">
+            <li>
+              <span>审核队列</span>
+              <strong>{model.reviewCount > 0 ? `${model.reviewCount} 篇待确认` : "已清空"}</strong>
+              <p>人工确认事实、表达与平台规范。</p>
+            </li>
+            <li>
+              <span>发布准备</span>
+              <strong>{model.pendingPublicationCount > 0 ? `${model.pendingPublicationCount} 项待处理` : "暂无待处理"}</strong>
+              <p>系统只准备和预填，不执行最终发布。</p>
+            </li>
+            <li>
+              <span>指标窗口</span>
+              <strong>{model.dueMetricWindows > 0 ? `${model.dueMetricWindows} 个待补录` : "暂无到期窗口"}</strong>
+              <p>按 24h、72h、7d 记录可追溯证据。</p>
+            </li>
+          </ul>
+        </aside>
+      </section>
+
+      <section className="dashboard-safety">
+        <p className="eyebrow">发布安全边界</p>
+        <h2>准备可以自动化，最终发布必须由人完成。</h2>
+        <p>控制台只管理经过审核的内容版本和发布准备状态，不保存浏览器 Cookie，也不提供自动点击小红书最终发布按钮的路径。</p>
       </section>
     </main>
   );

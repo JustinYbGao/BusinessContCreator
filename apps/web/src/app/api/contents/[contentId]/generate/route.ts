@@ -3,9 +3,9 @@ import { NextResponse } from "next/server";
 import { ContentDraftSchema, type ContentDraft } from "@social-agent/contracts/content";
 import { WorkflowJobSummarySchema } from "@social-agent/contracts/product";
 import { sha256 } from "@social-agent/content-engine/hash";
-import { HttpError } from "../../../../../lib/auth";
+import { HttpError } from "../../../../../lib/workspace-context";
 import { preserveRenderInput } from "../../../../../lib/content-payload";
-import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../../../../lib/supabase/server";
+import { createSupabaseServiceRoleClient, requireServerInternalWorkspace } from "../../../../../lib/supabase/server";
 import { parseContentEditForm, parseContentEditRequest, parseGenerateContentRequest, scopeContentGenerationIdempotencyKey } from "../../../../../lib/api-inputs";
 
 function errorCode(error: unknown): string {
@@ -15,8 +15,6 @@ function errorCode(error: unknown): string {
 }
 
 function errorStatus(code: string): number {
-  if (code === "AUTH_REQUIRED") return 401;
-  if (code === "ADMIN_REQUIRED") return 403;
   if (code.startsWith("INVALID_CONTENT") || code === "EDIT_REASON_REQUIRED" || code === "IDEMPOTENCY_KEY_INVALID") return 400;
   if (code === "CONTENT_NOT_FOUND" || code === "CONTENT_VERSION_REQUIRED") return 404;
   if (code === "CONTENT_VERSION_INVALID" || code === "CONTENT_FACT_SCOPE_MISMATCH" || code === "CONTENT_ASSET_SCOPE_MISMATCH" || code === "CONTENT_PAGES_INVALID") return 409;
@@ -109,22 +107,22 @@ async function validateDraftScope(
 
 async function editContent(
   request: Request,
-  identity: { userId: string; workspaceId: string },
+  context: { actorId: string; workspaceId: string },
   contentId: string,
   input: { editReason: string; payload: ContentDraft; idempotencyKey?: string | undefined },
 ) {
   const supabase = createSupabaseServiceRoleClient();
-  const content = await getContent(supabase, identity.workspaceId, contentId);
-  const current = await getLatestVersion(supabase, identity.workspaceId, contentId);
+  const content = await getContent(supabase, context.workspaceId, contentId);
+  const current = await getLatestVersion(supabase, context.workspaceId, contentId);
   if (!current) throw new Error("CONTENT_VERSION_REQUIRED");
   const currentPayload = ContentDraftSchema.safeParse(current.payload);
   if (!currentPayload.success) throw new Error("CONTENT_VERSION_INVALID");
   const payload = preserveRenderInput(current.payload, ContentDraftSchema.parse(input.payload));
-  await validateDraftScope(supabase, identity.workspaceId, content.product_id, payload);
+  await validateDraftScope(supabase, context.workspaceId, content.product_id, payload);
   const requestId = input.idempotencyKey || request.headers.get("idempotency-key")?.trim() || request.headers.get("x-request-id")?.trim() || randomUUID();
   const { data: priorAudit, error: priorAuditError } = await supabase.from("audit_events")
     .select("entity_id")
-    .eq("workspace_id", identity.workspaceId)
+    .eq("workspace_id", context.workspaceId)
     .eq("request_id", requestId)
     .eq("action", "content_version.edited")
     .eq("entity_type", "content_version")
@@ -133,13 +131,13 @@ async function editContent(
   if (priorAuditError) throw new Error("CONTENT_EDIT_IDEMPOTENCY_LOOKUP_FAILED");
   if (priorAudit?.entity_id) {
     const { data: priorVersion, error: priorVersionError } = await supabase.from("content_versions").select("*")
-      .eq("workspace_id", identity.workspaceId).eq("id", priorAudit.entity_id).maybeSingle();
+      .eq("workspace_id", context.workspaceId).eq("id", priorAudit.entity_id).maybeSingle();
     if (priorVersionError || !priorVersion) throw new Error("CONTENT_EDIT_IDEMPOTENCY_LOOKUP_FAILED");
     return NextResponse.json({ version: contentVersionResponse(priorVersion as Record<string, unknown>) }, { headers: { "Cache-Control": "no-store" } });
   }
   const contentSha256 = sha256(payload);
   const { data: version, error: versionError } = await supabase.rpc("create_content_version", {
-    p_workspace_id: identity.workspaceId,
+    p_workspace_id: context.workspaceId,
     p_input: {
       product_id: content.product_id,
       campaign_id: content.campaign_id,
@@ -151,19 +149,19 @@ async function editContent(
       model_name: current.model_name,
       content_sha256: contentSha256,
       edit_reason: input.editReason,
-      created_by: identity.userId,
+      created_by: context.actorId,
     },
     p_actor_type: "user",
-    p_actor_id: identity.userId,
+    p_actor_id: context.actorId,
     p_request_id: requestId,
   });
   if (versionError || !version) throw new Error("CONTENT_VERSION_CREATE_FAILED");
   const { error: auditError } = await supabase.rpc("append_audit_event", {
-    p_workspace_id: identity.workspaceId,
+    p_workspace_id: context.workspaceId,
     p_event: {
       product_id: content.product_id,
       actor_type: "user",
-      actor_id: identity.userId,
+      actor_id: context.actorId,
       action: "content_version.edited",
       entity_type: "content_version",
       entity_id: (version as Record<string, unknown>).id,
@@ -177,7 +175,7 @@ async function editContent(
 
 export async function POST(request: Request, { params }: { params: Promise<{ contentId: string }> }) {
   try {
-    const identity = await requireServerInternalAdmin();
+    const context = await requireServerInternalWorkspace();
     const { contentId } = await params;
     let body: unknown;
     try {
@@ -189,13 +187,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ con
     const record = body as Record<string, unknown>;
     if (record.action === "edit") {
       const supabase = createSupabaseServiceRoleClient();
-      const content = await getContent(supabase, identity.workspaceId, contentId);
-      const current = await getLatestVersion(supabase, identity.workspaceId, contentId);
+      const content = await getContent(supabase, context.workspaceId, contentId);
+      const current = await getLatestVersion(supabase, context.workspaceId, contentId);
       if (!current) throw new Error("CONTENT_VERSION_REQUIRED");
       const currentPayload = ContentDraftSchema.safeParse(current.payload);
       if (!currentPayload.success) throw new Error("CONTENT_VERSION_INVALID");
       const edit = "payload" in record ? parseContentEditRequest(record) : parseContentEditForm(record, currentPayload.data);
-      return editContent(request, identity, contentId, edit);
+      return editContent(request, context, contentId, edit);
     }
 
     const input = parseGenerateContentRequest(body);
@@ -203,10 +201,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ con
     if (baseKey.length > 200) throw new Error("IDEMPOTENCY_KEY_INVALID");
     const jobIdempotencyKey = scopeContentGenerationIdempotencyKey(contentId, baseKey);
     const supabase = createSupabaseServiceRoleClient();
-    const content = await getContent(supabase, identity.workspaceId, contentId);
+    const content = await getContent(supabase, context.workspaceId, contentId);
     const { data: brief, error: briefError } = await supabase.from("content_briefs")
       .select("id")
-      .eq("workspace_id", identity.workspaceId)
+      .eq("workspace_id", context.workspaceId)
       .eq("product_id", content.product_id)
       .eq("campaign_id", content.campaign_id)
       .eq("topic_id", content.topic_id)
@@ -216,7 +214,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ con
     const { data: job, error: jobError } = await supabase
       .from("workflow_jobs")
       .insert({
-        workspace_id: identity.workspaceId,
+        workspace_id: context.workspaceId,
         product_id: content.product_id,
         kind: "generate_content",
         idempotency_key: jobIdempotencyKey,
@@ -226,18 +224,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ con
       .select("id,status")
       .single();
     if (jobError?.code === "23505") {
-      const existing = await supabase.from("workflow_jobs").select("id,status").eq("workspace_id", identity.workspaceId).eq("idempotency_key", jobIdempotencyKey).maybeSingle();
+      const existing = await supabase.from("workflow_jobs").select("id,status").eq("workspace_id", context.workspaceId).eq("idempotency_key", jobIdempotencyKey).maybeSingle();
       if (existing.error || !existing.data) throw new Error("CONTENT_JOB_UNAVAILABLE");
       return NextResponse.json({ job: WorkflowJobSummarySchema.parse(existing.data) }, { status: 202, headers: { "Cache-Control": "no-store" } });
     }
     if (jobError || !job) throw new Error("CONTENT_JOB_UNAVAILABLE");
     const requestId = request.headers.get("x-request-id")?.trim() || randomUUID();
     const { error: auditError } = await supabase.rpc("append_audit_event", {
-      p_workspace_id: identity.workspaceId,
+      p_workspace_id: context.workspaceId,
       p_event: {
         product_id: content.product_id,
         actor_type: "user",
-        actor_id: identity.userId,
+        actor_id: context.actorId,
         action: "workflow_job.enqueued",
         entity_type: "workflow_job",
         entity_id: job.id,
@@ -246,7 +244,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ con
       },
     });
     if (auditError) {
-      await supabase.from("workflow_jobs").delete().eq("workspace_id", identity.workspaceId).eq("id", job.id).eq("status", "queued");
+      await supabase.from("workflow_jobs").delete().eq("workspace_id", context.workspaceId).eq("id", job.id).eq("status", "queued");
       throw new Error("AUDIT_WRITE_FAILED");
     }
     return NextResponse.json({ job: WorkflowJobSummarySchema.parse(job) }, { status: 202, headers: { "Cache-Control": "no-store" } });

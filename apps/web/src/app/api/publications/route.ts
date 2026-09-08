@@ -2,10 +2,10 @@ import { PublicationPackageSchema, type Publication, type PublicationPackage } f
 import { SupabasePublicationRepository, type RepositoryContext } from "@social-agent/db";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { HttpError } from "../../../lib/auth";
+import { HttpError } from "../../../lib/workspace-context";
 import {
   createSupabaseServiceRoleClient,
-  requireServerInternalAdmin,
+  requireServerInternalWorkspace,
 } from "../../../lib/supabase/server";
 
 const PublicationRequestSchema = z.object({
@@ -13,9 +13,9 @@ const PublicationRequestSchema = z.object({
   idempotencyKey: z.string().trim().min(1).max(200).optional(),
 }).strict();
 
-interface PublicationIdentity {
+interface PublicationContext {
   workspaceId: string;
-  userId: string;
+  actorId: string;
 }
 
 interface ExistingPublication {
@@ -33,7 +33,7 @@ interface PublicationPackagingPort {
 }
 
 interface CreatePublicationPackageInput {
-  identity: PublicationIdentity;
+  context: PublicationContext;
   contentVersionId: string;
   idempotencyKey: string;
   port: PublicationPackagingPort;
@@ -64,7 +64,7 @@ async function createPublicationPackage(
   input: CreatePublicationPackageInput,
 ): Promise<PublicationPackage> {
   const existing = await input.port.findExisting(
-    input.identity.workspaceId,
+    input.context.workspaceId,
     input.contentVersionId,
   );
   if (existing) {
@@ -73,28 +73,28 @@ async function createPublicationPackage(
     }
     return validatedPackage(
       existing.publication,
-      input.identity.workspaceId,
+      input.context.workspaceId,
       input.contentVersionId,
       false,
     );
   }
 
   const publication = await input.port.create({
-    workspaceId: input.identity.workspaceId,
-    actor: { type: "user", id: input.identity.userId },
+    workspaceId: input.context.workspaceId,
+    actor: { type: "user", id: input.context.actorId },
     requestId: input.idempotencyKey,
   }, {
     contentVersionId: input.contentVersionId,
     idempotencyKey: input.idempotencyKey,
   });
   const creationKey = await input.port.findCreationIdempotencyKey(
-    input.identity.workspaceId,
+    input.context.workspaceId,
     publication.id,
   );
   if (creationKey !== input.idempotencyKey) {
     throw new Error("PUBLICATION_ALREADY_PACKAGED");
   }
-  return validatedPackage(publication, input.identity.workspaceId, input.contentVersionId, true);
+  return validatedPackage(publication, input.context.workspaceId, input.contentVersionId, true);
 }
 
 function createPublicationPackagingPort(
@@ -169,8 +169,6 @@ function codeOf(error: unknown): string {
 }
 
 function statusOf(code: string): number {
-  if (code === "AUTH_REQUIRED") return 401;
-  if (code === "ADMIN_REQUIRED") return 403;
   if (
     code === "INVALID_PUBLICATION_INPUT"
     || code === "IDEMPOTENCY_KEY_REQUIRED"
@@ -190,7 +188,7 @@ function statusOf(code: string): number {
 
 export async function POST(request: Request) {
   try {
-    const identity = await requireServerInternalAdmin();
+    const context = await requireServerInternalWorkspace();
     let rawBody: unknown;
     try {
       rawBody = await request.json();
@@ -209,7 +207,7 @@ export async function POST(request: Request) {
 
     const supabase = createSupabaseServiceRoleClient();
     const publicationPackage = await createPublicationPackage({
-      identity,
+      context,
       contentVersionId: parsed.data.contentVersionId,
       idempotencyKey,
       port: createPublicationPackagingPort(supabase),

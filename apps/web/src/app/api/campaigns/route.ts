@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { CampaignRecordSchema } from "@social-agent/contracts/product";
-import { HttpError } from "../../../lib/auth";
-import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../../lib/supabase/server";
+import { HttpError } from "../../../lib/workspace-context";
+import { createSupabaseServiceRoleClient, requireServerInternalWorkspace } from "../../../lib/supabase/server";
 import { parseCampaignRequest } from "../../../lib/api-inputs";
 
 function codeOf(error: unknown): string {
@@ -13,8 +13,6 @@ function codeOf(error: unknown): string {
 }
 
 function statusOf(code: string): number {
-  if (code === "AUTH_REQUIRED") return 401;
-  if (code === "ADMIN_REQUIRED") return 403;
   if (code === "INVALID_CAMPAIGN_INPUT" || code === "IDEMPOTENCY_KEY_INVALID") return 400;
   if (code === "PRODUCT_NOT_FOUND" || code === "CHANNEL_SCOPE_MISMATCH") return 404;
   if (code === "CAMPAIGN_ALREADY_EXISTS") return 409;
@@ -57,16 +55,16 @@ async function findIdempotentCampaign(
 
 export async function GET(request: Request) {
   try {
-    const identity = await requireServerInternalAdmin();
+    const context = await requireServerInternalWorkspace();
     const productId = new URL(request.url).searchParams.get("productId");
     const supabase = createSupabaseServiceRoleClient();
-    let query = supabase.from("campaigns").select("id,workspace_id,product_id,channel_id,name,goal,audience,pillar_quotas,starts_on,ends_on,created_at").eq("workspace_id", identity.workspaceId).order("created_at");
+    let query = supabase.from("campaigns").select("id,workspace_id,product_id,channel_id,name,goal,audience,pillar_quotas,starts_on,ends_on,created_at").eq("workspace_id", context.workspaceId).order("created_at");
     if (productId) {
-      const { data: product, error: productError } = await supabase.from("products").select("id").eq("workspace_id", identity.workspaceId).eq("id", productId).is("deleted_at", null).maybeSingle();
+      const { data: product, error: productError } = await supabase.from("products").select("id").eq("workspace_id", context.workspaceId).eq("id", productId).is("deleted_at", null).maybeSingle();
       if (productError || !product) throw new Error("PRODUCT_NOT_FOUND");
       query = query.eq("product_id", productId);
     } else {
-      const { data: products, error: productError } = await supabase.from("products").select("id").eq("workspace_id", identity.workspaceId).is("deleted_at", null);
+      const { data: products, error: productError } = await supabase.from("products").select("id").eq("workspace_id", context.workspaceId).is("deleted_at", null);
       if (productError) throw new Error("PRODUCTS_UNAVAILABLE");
       const ids = (products ?? []).map((product) => product.id);
       if (ids.length === 0) return NextResponse.json({ campaigns: [] }, { headers: { "Cache-Control": "no-store" } });
@@ -82,7 +80,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const identity = await requireServerInternalAdmin();
+    const context = await requireServerInternalWorkspace();
     let body: unknown;
     try {
       body = await request.json();
@@ -91,26 +89,26 @@ export async function POST(request: Request) {
     }
     const input = parseCampaignRequest(body);
     const supabase = createSupabaseServiceRoleClient();
-    const { data: product, error: productError } = await supabase.from("products").select("id").eq("workspace_id", identity.workspaceId).eq("id", input.productId).is("deleted_at", null).maybeSingle();
+    const { data: product, error: productError } = await supabase.from("products").select("id").eq("workspace_id", context.workspaceId).eq("id", input.productId).is("deleted_at", null).maybeSingle();
     if (productError || !product) throw new Error("PRODUCT_NOT_FOUND");
-    const { data: channel, error: channelError } = await supabase.from("channels").select("id").eq("workspace_id", identity.workspaceId).eq("product_id", input.productId).eq("id", input.channelId).eq("kind", "xiaohongshu").eq("status", "active").maybeSingle();
+    const { data: channel, error: channelError } = await supabase.from("channels").select("id").eq("workspace_id", context.workspaceId).eq("product_id", input.productId).eq("id", input.channelId).eq("kind", "xiaohongshu").eq("status", "active").maybeSingle();
     if (channelError || !channel) throw new Error("CHANNEL_SCOPE_MISMATCH");
     const idempotencyKey = idempotencyKeyFrom(request);
     const requestId = idempotencyKey || request.headers.get("x-request-id")?.trim() || randomUUID();
     if (idempotencyKey) {
-      const existing = await findIdempotentCampaign(supabase, identity.workspaceId, idempotencyKey);
+      const existing = await findIdempotentCampaign(supabase, context.workspaceId, idempotencyKey);
       if (existing) return NextResponse.json(existing, { headers: { "Cache-Control": "no-store" } });
     }
-    const { data: campaign, error: campaignError } = await supabase.from("campaigns").insert({ workspace_id: identity.workspaceId, product_id: input.productId, channel_id: input.channelId, name: input.name, goal: input.goal, audience: input.audience, starts_on: input.startsOn, ends_on: input.endsOn, pillar_quotas: input.pillarQuotas }).select("id,workspace_id,product_id,channel_id,name,goal,audience,pillar_quotas,starts_on,ends_on,created_at").single();
+    const { data: campaign, error: campaignError } = await supabase.from("campaigns").insert({ workspace_id: context.workspaceId, product_id: input.productId, channel_id: input.channelId, name: input.name, goal: input.goal, audience: input.audience, starts_on: input.startsOn, ends_on: input.endsOn, pillar_quotas: input.pillarQuotas }).select("id,workspace_id,product_id,channel_id,name,goal,audience,pillar_quotas,starts_on,ends_on,created_at").single();
     if (campaignError || !campaign) throw new Error(campaignError?.code === "23505" ? "CAMPAIGN_ALREADY_EXISTS" : "CAMPAIGN_CREATE_FAILED");
     const campaignRecord = CampaignRecordSchema.parse(campaign);
     const { error: auditError } = await supabase.rpc("append_audit_event", {
-      p_workspace_id: identity.workspaceId,
-      p_event: { product_id: input.productId, actor_type: "user", actor_id: identity.userId, action: "campaign.created", entity_type: "campaign", entity_id: campaignRecord.id, request_id: requestId, payload: { channelId: input.channelId, idempotencyKey } },
+      p_workspace_id: context.workspaceId,
+      p_event: { product_id: input.productId, actor_type: "user", actor_id: context.actorId, action: "campaign.created", entity_type: "campaign", entity_id: campaignRecord.id, request_id: requestId, payload: { channelId: input.channelId, idempotencyKey } },
     });
     if (auditError) {
       const { error: rollbackError } = await supabase.from("campaigns").delete()
-        .eq("workspace_id", identity.workspaceId).eq("product_id", input.productId).eq("id", campaignRecord.id);
+        .eq("workspace_id", context.workspaceId).eq("product_id", input.productId).eq("id", campaignRecord.id);
       if (rollbackError) throw new Error("CAMPAIGN_ROLLBACK_FAILED");
       throw new Error("AUDIT_WRITE_FAILED");
     }

@@ -9,7 +9,7 @@ import {
 } from "@social-agent/analytics";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { HttpError } from "./auth";
+import { HttpError } from "./workspace-context";
 
 const SnapshotShape = z.object({
   id: z.string().uuid(),

@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { parseMetricSnapshot, metricWindowDue } from "../../../lib/analytics-route";
 import { buildRollingMedian, summarizeConversions, type MetricWindow } from "@social-agent/analytics";
-import { createSupabaseServiceRoleClient, requireServerInternalAdmin } from "../../../lib/supabase/server";
+import { IconMark } from "../../../components/console-ui";
+import { metricWindowDue, parseMetricSnapshot } from "../../../lib/analytics-route";
+import { createSupabaseServiceRoleClient, requireServerInternalWorkspace } from "../../../lib/supabase/server";
 
 const WINDOWS: MetricWindow[] = ["24h", "72h", "7d"];
-const cardStyle = { background: "#fff", border: "1px solid #dbe4d8", borderRadius: 18, padding: 24 };
 
 function formatTime(value: string | null): string {
   if (!value) return "—";
@@ -25,15 +25,15 @@ function statusText(status: string): string {
 }
 
 export default async function AnalyticsPage() {
-  const identity = await requireServerInternalAdmin();
+  const context = await requireServerInternalWorkspace();
   const supabase = createSupabaseServiceRoleClient();
   const [productsResult, campaignsResult, publicationsResult, reportsResult, importsResult, learningsResult] = await Promise.all([
-    supabase.from("products").select("id,name").eq("workspace_id", identity.workspaceId).is("deleted_at", null).order("created_at"),
-    supabase.from("campaigns").select("id,name,product_id,starts_on,ends_on").eq("workspace_id", identity.workspaceId).order("created_at", { ascending: false }),
-    supabase.from("publications").select("id,product_id,campaign_id,status,public_url,published_at,created_at").eq("workspace_id", identity.workspaceId).in("status", ["PUBLISHED", "MEASURING", "RETROSPECTED"]).order("created_at", { ascending: false }),
-    supabase.from("weekly_reports").select("id,product_id,campaign_id,week_start,payload,source_snapshot_ids,created_at").eq("workspace_id", identity.workspaceId).order("week_start", { ascending: false }),
-    supabase.from("metric_imports").select("id,product_id,format,accepted_rows,created_at").eq("workspace_id", identity.workspaceId).order("created_at", { ascending: false }),
-    supabase.from("learnings").select("id,product_id,publication_id,evidence_window,created_at").eq("workspace_id", identity.workspaceId).order("created_at", { ascending: false }),
+    supabase.from("products").select("id,name").eq("workspace_id", context.workspaceId).is("deleted_at", null).order("created_at"),
+    supabase.from("campaigns").select("id,name,product_id,starts_on,ends_on").eq("workspace_id", context.workspaceId).order("created_at", { ascending: false }),
+    supabase.from("publications").select("id,product_id,campaign_id,status,public_url,published_at,created_at").eq("workspace_id", context.workspaceId).in("status", ["PUBLISHED", "MEASURING", "RETROSPECTED"]).order("created_at", { ascending: false }),
+    supabase.from("weekly_reports").select("id,product_id,campaign_id,week_start,payload,source_snapshot_ids,created_at").eq("workspace_id", context.workspaceId).order("week_start", { ascending: false }),
+    supabase.from("metric_imports").select("id,product_id,format,accepted_rows,created_at").eq("workspace_id", context.workspaceId).order("created_at", { ascending: false }),
+    supabase.from("learnings").select("id,product_id,publication_id,evidence_window,created_at").eq("workspace_id", context.workspaceId).order("created_at", { ascending: false }),
   ]);
 
   const products = productsResult.error ? [] : productsResult.data ?? [];
@@ -90,8 +90,8 @@ export default async function AnalyticsPage() {
     }));
     const latestReport = reports.find((report) => report.campaign_id === campaign.id) ?? null;
     const latestImport = imports.find((entry) => entry.product_id === campaign.product_id) ?? null;
-    const publicationIds = new Set(campaignPublications.map((publication) => publication.id));
-    const eligibleLearningIds = learnings.filter((learning) => publicationIds.has(learning.publication_id)).map((learning) => learning.id);
+    const campaignPublicationIds = new Set(campaignPublications.map((publication) => publication.id));
+    const eligibleLearningIds = learnings.filter((learning) => campaignPublicationIds.has(learning.publication_id)).map((learning) => learning.id);
     return {
       ...campaign,
       productName: productNames.get(campaign.product_id) ?? "Product",
@@ -107,59 +107,60 @@ export default async function AnalyticsPage() {
 
   return (
     <main>
-      <p style={{ color: "#5b705d", fontSize: 13, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase" }}>Analytics loop</p>
-      <div style={{ alignItems: "end", display: "flex", flexWrap: "wrap", gap: 20, justifyContent: "space-between" }}>
+      <div className="page-heading page-heading--compact">
         <div>
-          <h1 style={{ fontSize: 48, letterSpacing: "-0.05em", margin: "12px 0" }}>复盘与证据</h1>
-          <p style={{ color: "#536057", lineHeight: 1.6, margin: 0 }}>只看当前 Workspace 的已发布内容、指标窗口和分 attribution 的转化证据。</p>
+          <p className="eyebrow">Analytics loop</p>
+          <h1>复盘与证据</h1>
+          <p>只看当前 Workspace 的已发布内容、指标窗口和分 attribution 的转化证据。</p>
         </div>
-        <span style={{ color: "#7b887d", fontSize: 13 }}>Workspace: {identity.workspaceId}</span>
+        <span className="page-heading-meta mono">Workspace: {context.workspaceId}</span>
       </div>
 
-      <section style={{ background: "#e5ecdf", borderRadius: 22, marginTop: 32, padding: 24 }}>
-        <p style={{ color: "#5b705d", fontSize: 13, fontWeight: 700, marginTop: 0 }}>Evidence policy</p>
-        <h2 style={{ fontSize: 26, letterSpacing: "-0.04em", margin: "10px 0" }}>直接、自报、推断保持分开。</h2>
-        <p style={{ color: "#536057", lineHeight: 1.6, margin: 0 }}>缺失窗口会单独标记；不足十个可比样本的 Learning 只会显示为 hypothesis，不会伪装成确定结论。</p>
+      <section className="policy-panel">
+        <p className="eyebrow">Evidence policy</p>
+        <h2>直接、自报、推断保持分开。</h2>
+        <p>缺失窗口会单独标记；不足十个可比样本的 Learning 只会显示为 hypothesis，不会伪装成确定结论。</p>
       </section>
 
-      <section style={{ display: "grid", gap: 16, marginTop: 28 }}>
-        {campaignCards.length === 0 ? <p style={{ ...cardStyle, color: "#536057" }}>当前 Workspace 还没有可测量的 Campaign。</p> : campaignCards.map((campaign) => (
-          <article key={campaign.id} style={cardStyle}>
-            <div style={{ alignItems: "start", display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "space-between" }}>
+      <section className="surface-list">
+        {campaignCards.length === 0 ? <div className="empty-state surface-card"><p>当前 Workspace 还没有可测量的 Campaign。</p></div> : campaignCards.map((campaign) => (
+          <article className="surface-card" key={campaign.id}>
+            <div className="surface-card-header">
               <div>
-                <p style={{ color: "#5b705d", fontSize: 13, fontWeight: 700, margin: 0 }}>{campaign.productName}</p>
-                <h2 style={{ fontSize: 28, letterSpacing: "-0.04em", margin: "8px 0" }}><Link href={`/app/campaigns/${campaign.id}`} style={{ color: "inherit", textDecoration: "none" }}>{campaign.name}</Link></h2>
-                <p style={{ color: "#7b887d", fontSize: 13, margin: 0 }}>{campaign.starts_on} → {campaign.ends_on}</p>
+                <p className="eyebrow">{campaign.productName}</p>
+                <h2><Link href={`/app/campaigns/${campaign.id}`}>{campaign.name}</Link></h2>
+                <p className="card-meta">{campaign.starts_on} → {campaign.ends_on}</p>
               </div>
-              <div style={{ color: "#536057", fontSize: 14, textAlign: "right" }}>
-                <p style={{ margin: 0 }}><strong>{campaign.publications.length}</strong> 篇已发布</p>
-                <p style={{ margin: "8px 0 0" }}><strong>{campaign.missingWindows}</strong> 个到期窗口待补</p>
-                <p style={{ margin: "8px 0 0" }}>{campaign.latestReport ? `周报 ${campaign.latestReport.week_start}` : "暂无报告"}</p>
+              <div className="card-meta">
+                <strong>{campaign.publications.length}</strong> 篇已发布<br />
+                <strong>{campaign.missingWindows}</strong> 个到期窗口待补<br />
+                {campaign.latestReport ? `周报 ${campaign.latestReport.week_start}` : "暂无报告"}
               </div>
             </div>
 
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 20 }}>
-              <span style={{ background: "#e5ecdf", borderRadius: 999, color: "#315d38", fontSize: 13, padding: "7px 10px" }}>direct: {campaign.conversions.direct}</span>
-              <span style={{ background: "#f4ead4", borderRadius: 999, color: "#536057", fontSize: 13, padding: "7px 10px" }}>self-reported: {campaign.conversions.selfReported}</span>
-              <span style={{ background: "#eef0ea", borderRadius: 999, color: "#536057", fontSize: 13, padding: "7px 10px" }}>inferred: {campaign.conversions.inferred}</span>
+            <div className="chip-row">
+              <span className="chip" data-tone="healthy">direct: {campaign.conversions.direct}</span>
+              <span className="chip" data-tone="attention">self-reported: {campaign.conversions.selfReported}</span>
+              <span className="chip">inferred: {campaign.conversions.inferred}</span>
             </div>
 
-            <div style={{ borderTop: "1px solid #e6ece3", display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", marginTop: 20, paddingTop: 18 }}>
-              {campaign.medians.map((median) => <div key={median.window} style={{ background: "#f6f7f2", borderRadius: 12, padding: 12 }}>
-                <p style={{ color: "#5b705d", fontSize: 12, fontWeight: 700, margin: 0 }}>{median.window} median</p>
-                <p style={{ fontSize: 20, fontWeight: 800, margin: "8px 0 4px" }}>{median.medians.impressions ?? "—"}</p>
-                <p style={{ color: "#7b887d", fontSize: 12, margin: 0 }}>{median.sampleCount} 个可比样本</p>
+            <div className="score-grid">
+              {campaign.medians.map((median) => <div className="metric-panel" key={median.window}>
+                <span className="metric-panel-label">{median.window} median</span>
+                <p className="metric-panel-value">{median.medians.impressions ?? "—"}</p>
+                <p className="metric-panel-caption">{median.sampleCount} 个可比样本</p>
               </div>)}
             </div>
-            <div style={{ color: "#536057", display: "grid", gap: 8, fontSize: 14, marginTop: 18 }}>
-              <p style={{ margin: 0 }}><strong>最近导入：</strong>{campaign.latestImport ? `${campaign.latestImport.format} · ${campaign.latestImport.accepted_rows} 行 · ${formatTime(campaign.latestImport.created_at)}` : "暂无指标导入"}</p>
-              <p style={{ margin: 0 }}><strong>Eligible Learning：</strong>{campaign.eligibleLearningIds.length > 0 ? campaign.eligibleLearningIds.join("、") : "暂无"}</p>
+
+            <div className="card-divider">
+              <p className="card-copy"><strong>最近导入：</strong>{campaign.latestImport ? `${campaign.latestImport.format} · ${campaign.latestImport.accepted_rows} 行 · ${formatTime(campaign.latestImport.created_at)}` : "暂无指标导入"}</p>
+              <p className="card-copy"><strong>Eligible Learning：</strong>{campaign.eligibleLearningIds.length > 0 ? campaign.eligibleLearningIds.join("、") : "暂无"}</p>
             </div>
 
-            {campaign.publications.length > 0 ? <div style={{ borderTop: "1px solid #e6ece3", display: "grid", gap: 10, marginTop: 22, paddingTop: 18 }}>
-              {campaign.publications.slice(0, 8).map((publication) => <Link key={publication.id} href={`/app/publications/${publication.id}`} style={{ alignItems: "center", color: "#315d38", display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "space-between", textDecoration: "none" }}>
-                <span style={{ fontFamily: "monospace", fontSize: 13 }}>{publication.id}</span>
-                <span style={{ color: "#536057", fontFamily: "inherit", fontSize: 13 }}>{statusText(publication.status)} · {formatTime(publication.published_at)} →</span>
+            {campaign.publications.length > 0 ? <div className="data-list card-divider">
+              {campaign.publications.slice(0, 8).map((publication) => <Link className="data-list-row" key={publication.id} href={`/app/publications/${publication.id}`}>
+                <span className="mono">{publication.id}</span>
+                <span>{statusText(publication.status)} · {formatTime(publication.published_at)} <IconMark name="arrow" size={14} /></span>
               </Link>)}
             </div> : null}
           </article>

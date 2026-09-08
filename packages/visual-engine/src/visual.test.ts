@@ -95,11 +95,10 @@ function fakePublicationSupabase(state: PublicationRouteState) {
 async function loadPublicationRoute(state: PublicationRouteState) {
   vi.resetModules();
   vi.doMock(publicationServerModulePath, () => ({
-    async requireServerInternalAdmin() {
+    async requireServerInternalWorkspace() {
       return {
         workspaceId,
-        userId: "00000000-0000-4000-8000-000000000006",
-        email: "admin@example.invalid",
+        actorId: "00000000-0000-4000-8000-000000000000",
       };
     },
     createSupabaseServiceRoleClient() {
@@ -438,7 +437,7 @@ describe("publication packaging route contract", () => {
     expect(Object.keys(route).sort()).toEqual(["POST"]);
   });
 
-  it("calls the Task 2 transaction in the authenticated workspace and returns only the package schema", async () => {
+  it("calls the Task 2 transaction in the internal workspace and returns only the package schema", async () => {
     const packageWithSignedUrl = {
       ...publication.package,
       imageDownloadUrls: ["https://example.invalid/secret"],
@@ -461,7 +460,7 @@ describe("publication packaging route contract", () => {
       p_workspace_id: workspaceId,
       p_content_version_id: contentVersionId,
       p_idempotency_key: "publication-request-1",
-      p_actor_id: "00000000-0000-4000-8000-000000000006",
+      p_actor_id: "00000000-0000-4000-8000-000000000000",
       p_request_id: "publication-request-1",
     })]);
     expect(PublicationPackageSchema.safeParse(result).success).toBe(true);
